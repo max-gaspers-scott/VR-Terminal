@@ -91,7 +91,22 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`VR Terminal Server running on http://localhost:${PORT}`);
-  console.log('Open in VR-enabled browser to start using the terminal');
+const HOST = '0.0.0.0'; // Listen on all network interfaces
+
+server.listen(PORT, HOST, () => {
+  console.log(`VR Terminal Server running on:`);
+  console.log(`  Local:   http://localhost:${PORT}`);
+
+  // Get local network IP addresses
+  const networkInterfaces = require('os').networkInterfaces();
+  Object.keys(networkInterfaces).forEach(interfaceName => {
+    networkInterfaces[interfaceName].forEach(iface => {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        console.log(`  Network: http://${iface.address}:${PORT}`);
+      }
+    });
+  });
+
+  console.log('\nAccess from your phone using the Network address above');
+  console.log('Make sure your phone and computer are on the same network');
 });
