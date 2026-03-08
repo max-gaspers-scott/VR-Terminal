@@ -1,6 +1,7 @@
 import './App.css';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import TerminalCanvas from './TerminalCanvas';
+import { encodeKeyEvent } from './terminalInput';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8081';
 
@@ -9,6 +10,9 @@ function App() {
   const [socketStatus, setSocketStatus] = useState('connecting');
   const [socketError, setSocketError] = useState('');
   const [terminalSnapshot, setTerminalSnapshot] = useState(null);
+  const [terminalFocused, setTerminalFocused] = useState(false);
+  const socketRef = useRef(null);
+  const terminalShellRef = useRef(null);
 
   useEffect(() => {
     if (typeof window.io !== 'function') {
@@ -18,10 +22,12 @@ function App() {
     }
 
     const socket = window.io(API_URL, { path: '/socket.io' });
+    socketRef.current = socket;
 
     socket.on('connect', () => {
       setSocketStatus('connected');
       setSocketError('');
+      terminalShellRef.current?.focus();
     });
 
     socket.on('disconnect', () => {
@@ -38,6 +44,7 @@ function App() {
     });
 
     return () => {
+      socketRef.current = null;
       socket.close();
     };
   }, []);
@@ -69,6 +76,20 @@ function App() {
     }
   };
 
+  const handleTerminalKeyDown = (event) => {
+    const encoded = encodeKeyEvent(event);
+    if (!encoded) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('terminal-input', encoded);
+    }
+  };
+
   return (
     <div className="App">
       <div className="App-shell">
@@ -90,8 +111,19 @@ function App() {
 
         {apiStatus && <p className="info-banner">{apiStatus}</p>}
         {socketError && <p className="info-banner info-banner-error">{socketError}</p>}
+        <p className="terminal-hint">
+          {terminalFocused ? 'Terminal focused — keyboard input goes to the PTY.' : 'Click the terminal to focus it, then type to send input to the PTY.'}
+        </p>
 
-        <div className="terminal-shell">
+        <div
+          ref={terminalShellRef}
+          className={`terminal-shell ${terminalFocused ? 'terminal-shell-focused' : ''}`}
+          tabIndex={0}
+          onFocus={() => setTerminalFocused(true)}
+          onBlur={() => setTerminalFocused(false)}
+          onKeyDown={handleTerminalKeyDown}
+          onMouseDown={() => terminalShellRef.current?.focus()}
+        >
           <TerminalCanvas snapshot={terminalSnapshot} />
         </div>
       </div>

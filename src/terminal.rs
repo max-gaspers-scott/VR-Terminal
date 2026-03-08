@@ -1,7 +1,7 @@
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Serialize;
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use tokio::sync::watch;
 use vte::{Params, Parser, Perform};
 
@@ -15,6 +15,9 @@ struct Cell {
     ch: char,
     fg: [u8; 3],
     bg: [u8; 3],
+    bold: bool,
+    underline: bool,
+    reverse: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -22,6 +25,9 @@ struct SnapshotCell {
     ch: char,
     fg: [u8; 3],
     bg: [u8; 3],
+    bold: bool,
+    underline: bool,
+    reverse: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -39,6 +45,9 @@ struct TerminalGrid {
     cursor_col: usize,
     current_fg: [u8; 3],
     current_bg: [u8; 3],
+    current_bold: bool,
+    current_underline: bool,
+    current_reverse: bool,
     rows: usize,
     cols: usize,
 }
@@ -52,6 +61,9 @@ impl TerminalGrid {
             cursor_col: 0,
             current_fg: [255, 255, 255],
             current_bg: [0, 0, 0],
+            current_bold: false,
+            current_underline: false,
+            current_reverse: false,
             rows,
             cols,
         }
@@ -62,17 +74,23 @@ impl TerminalGrid {
             ch: ' ',
             fg: DEFAULT_FG,
             bg: DEFAULT_BG,
+            bold: false,
+            underline: false,
+            reverse: false,
         }
     }
 
-    fn reset_colors(&mut self) {
+    fn reset_attributes(&mut self) {
         self.current_fg = DEFAULT_FG;
         self.current_bg = DEFAULT_BG;
+        self.current_bold = false;
+        self.current_underline = false;
+        self.current_reverse = false;
     }
 
     fn apply_sgr(&mut self, params: &[u16]) {
         if params.is_empty() {
-            self.reset_colors();
+            self.reset_attributes();
             return;
         }
 
@@ -80,7 +98,31 @@ impl TerminalGrid {
         while i < params.len() {
             match params[i] {
                 0 => {
-                    self.reset_colors();
+                    self.reset_attributes();
+                    i += 1;
+                }
+                1 => {
+                    self.current_bold = true;
+                    i += 1;
+                }
+                4 | 21 => {
+                    self.current_underline = true;
+                    i += 1;
+                }
+                7 => {
+                    self.current_reverse = true;
+                    i += 1;
+                }
+                22 => {
+                    self.current_bold = false;
+                    i += 1;
+                }
+                24 => {
+                    self.current_underline = false;
+                    i += 1;
+                }
+                27 => {
+                    self.current_reverse = false;
                     i += 1;
                 }
                 30..=37 => {
@@ -145,6 +187,9 @@ impl TerminalGrid {
                             ch: cell.ch,
                             fg: cell.fg,
                             bg: cell.bg,
+                            bold: cell.bold,
+                            underline: cell.underline,
+                            reverse: cell.reverse,
                         })
                         .collect()
                 })
@@ -229,6 +274,9 @@ impl Perform for TerminalGrid {
                 ch: c,
                 fg: self.current_fg,
                 bg: self.current_bg,
+                bold: self.current_bold,
+                underline: self.current_underline,
+                reverse: self.current_reverse,
             };
             self.cursor_col += 1;
         }
@@ -253,7 +301,10 @@ impl Perform for TerminalGrid {
             }
             // SGR: colors and attributes ESC[...m
             'm' => {
-                let sgr_params: Vec<u16> = params.iter().flat_map(|param| param.iter().copied()).collect();
+                let sgr_params: Vec<u16> = params
+                    .iter()
+                    .flat_map(|param| param.iter().copied())
+                    .collect();
                 self.apply_sgr(&sgr_params);
             }
             // Erase display: ESC[2J
@@ -262,6 +313,9 @@ impl Perform for TerminalGrid {
                     ch: ' ',
                     fg: self.current_fg,
                     bg: self.current_bg,
+                    bold: self.current_bold,
+                    underline: self.current_underline,
+                    reverse: self.current_reverse,
                 };
                 for row in self.grid.iter_mut() {
                     for cell in row.iter_mut() {
@@ -299,7 +353,7 @@ fn print_grid(grid: &TerminalGrid) {
     }
     std::io::stdout().flush().unwrap();
 }
-pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>) {
+pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiver<Vec<u8>>) {
     let rows = DEFAULT_ROWS;
     let cols = DEFAULT_COLS;
     crossterm::terminal::enable_raw_mode().unwrap();
@@ -314,7 +368,7 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>) {
         })
         .unwrap();
 
-    let cmd = CommandBuilder::new("btop");
+    let cmd = CommandBuilder::new("nvim");
     let child = pair.slave.spawn_command(cmd).unwrap();
     // Drop the slave fd in *this* process. The master reader only returns EIO
     // (signalling EOF) once every holder of the slave fd has closed it.
@@ -341,8 +395,9 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>) {
     // });
 
     // Thread 2: your real stdin → PTY input
-    let mut writer = pair.master.take_writer().unwrap();
+    let writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
     let child_for_thread = Arc::clone(&child);
+    let writer_for_stdin = Arc::clone(&writer);
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let stdin = std::io::stdin();
@@ -356,8 +411,29 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>) {
                         child_for_thread.lock().unwrap().kill().ok();
                         break;
                     }
-                    writer.write_all(&buf[..n]).unwrap();
+                    if writer_for_stdin
+                        .lock()
+                        .unwrap()
+                        .write_all(&buf[..n])
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
+            }
+        }
+    });
+
+    let child_for_socket = Arc::clone(&child);
+    let writer_for_socket = Arc::clone(&writer);
+    std::thread::spawn(move || {
+        while let Ok(bytes) = input_rx.recv() {
+            if bytes.contains(&0x03) {
+                child_for_socket.lock().unwrap().kill().ok();
+            }
+
+            if writer_for_socket.lock().unwrap().write_all(&bytes).is_err() {
+                break;
             }
         }
     });
@@ -441,5 +517,38 @@ mod tests {
 
         assert_eq!(grid.current_fg, [12, 34, 56]);
         assert_eq!(grid.current_bg, [65, 43, 21]);
+    }
+
+    #[test]
+    fn sgr_text_attributes_update_and_reset() {
+        let mut grid = TerminalGrid::new(1, 1);
+
+        grid.apply_sgr(&[1, 4, 7]);
+        assert!(grid.current_bold);
+        assert!(grid.current_underline);
+        assert!(grid.current_reverse);
+
+        grid.apply_sgr(&[22, 24, 27]);
+        assert!(!grid.current_bold);
+        assert!(!grid.current_underline);
+        assert!(!grid.current_reverse);
+    }
+
+    #[test]
+    fn snapshot_preserves_text_attributes() {
+        let mut grid = TerminalGrid::new(1, 1);
+
+        grid.apply_sgr(&[1, 4, 7, 31, 47]);
+        grid.print('Z');
+
+        let snapshot = grid.snapshot();
+        let cell = &snapshot.grid[0][0];
+
+        assert_eq!(cell.ch, 'Z');
+        assert_eq!(cell.fg, ansi_color(1));
+        assert_eq!(cell.bg, ansi_color(7));
+        assert!(cell.bold);
+        assert!(cell.underline);
+        assert!(cell.reverse);
     }
 }

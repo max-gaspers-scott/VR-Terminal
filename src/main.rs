@@ -1,8 +1,9 @@
 use axum::http::{Method, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{Router, routing::get};
-use socketioxide::{SocketIo, extract::SocketRef};
+use socketioxide::{SocketIo, extract::{Data, SocketRef}};
 use std::result::Result;
+use std::sync::mpsc;
 use tokio::sync::watch;
 mod terminal;
 use terminal::{DEFAULT_COLS, DEFAULT_ROWS, TerminalSnapshot, main_terminal};
@@ -18,15 +19,24 @@ async fn health() -> String {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (terminal_tx, terminal_rx) =
         watch::channel(TerminalSnapshot::blank(DEFAULT_ROWS, DEFAULT_COLS));
+    let (input_tx, input_rx) = mpsc::channel();
 
     std::thread::spawn(move || {
-        main_terminal(terminal_tx);
+        main_terminal(terminal_tx, input_rx);
     });
 
     let (layer, io) = SocketIo::new_layer();
     io.ns("/", move |s: SocketRef| {
         let mut terminal_rx = terminal_rx.clone();
+        let input_tx = input_tx.clone();
         async move {
+            s.on("terminal-input", move |Data(input): Data<String>| {
+                let input_tx = input_tx.clone();
+                async move {
+                    let _ = input_tx.send(input.into_bytes());
+                }
+            });
+
             s.emit("terminal-grid", &*terminal_rx.borrow()).ok();
 
             let socket = s.clone();

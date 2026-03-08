@@ -6,4 +6,5 @@ test('renders the terminal viewer shell', () => {
 
   expect(screen.getByText(/terminal viewer/i)).toBeInTheDocument();
   expect(screen.getByText(/waiting for terminal stream/i)).toBeInTheDocument();
+  expect(screen.getByText(/click the terminal to focus it/i)).toBeInTheDocument();
 });

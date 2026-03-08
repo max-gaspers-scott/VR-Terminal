@@ -7,6 +7,25 @@ const FONT_FAMILY = '"DejaVu Sans Mono", "Noto Sans Mono", ui-monospace, SFMono-
 
 const toRgb = ([r, g, b]) => `rgb(${r}, ${g}, ${b})`;
 
+function brightenColor([r, g, b], amount = 0.2) {
+  return [r, g, b].map((value) => Math.min(255, Math.round(value + (255 - value) * amount)));
+}
+
+function getCellColors(cell) {
+  let fg = cell.fg;
+  let bg = cell.bg;
+
+  if (cell.reverse) {
+    [fg, bg] = [bg, fg];
+  }
+
+  if (cell.bold) {
+    fg = brightenColor(fg);
+  }
+
+  return { fg, bg };
+}
+
 function fillHorizontal(ctx, x, y, width, thickness) {
   const top = Math.round(y + (CELL_HEIGHT - thickness) / 2);
   ctx.fillRect(x, top, width, thickness);
@@ -136,8 +155,8 @@ function drawQuadrant(ctx, x, y, ch) {
   }
 }
 
-function drawBlockGlyph(ctx, ch, cell, x, y) {
-  ctx.fillStyle = toRgb(cell.fg);
+function drawBlockGlyph(ctx, ch, cell, x, y, colors) {
+  ctx.fillStyle = toRgb(colors.fg);
   switch (ch) {
     case '█':
       ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
@@ -322,7 +341,6 @@ export default function TerminalCanvas({ snapshot }) {
 
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -330,18 +348,37 @@ export default function TerminalCanvas({ snapshot }) {
       row.forEach((cell, colIndex) => {
         const x = colIndex * CELL_WIDTH;
         const y = rowIndex * CELL_HEIGHT;
+        const colors = getCellColors(cell);
 
-        ctx.fillStyle = toRgb(cell.bg);
+        ctx.fillStyle = toRgb(colors.bg);
         ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
 
-        if (!drawBlockGlyph(ctx, cell.ch, cell, x, y) && cell.ch !== ' ') {
+        if (!drawBlockGlyph(ctx, cell.ch, cell, x, y, colors) && cell.ch !== ' ') {
           ctx.save();
           ctx.beginPath();
           ctx.rect(x, y, CELL_WIDTH, CELL_HEIGHT);
           ctx.clip();
-          ctx.fillStyle = toRgb(cell.fg);
+          ctx.fillStyle = toRgb(colors.fg);
+          ctx.font = `${cell.bold ? '700' : '400'} ${FONT_SIZE}px ${FONT_FAMILY}`;
           ctx.fillText(cell.ch, x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 + 0.5);
+
+          if (cell.underline) {
+            ctx.beginPath();
+            ctx.strokeStyle = toRgb(colors.fg);
+            ctx.lineWidth = cell.bold ? 2 : 1;
+            ctx.moveTo(x + 1, y + CELL_HEIGHT - 3);
+            ctx.lineTo(x + CELL_WIDTH - 1, y + CELL_HEIGHT - 3);
+            ctx.stroke();
+          }
+
           ctx.restore();
+        } else if (cell.underline) {
+          ctx.beginPath();
+          ctx.strokeStyle = toRgb(colors.fg);
+          ctx.lineWidth = cell.bold ? 2 : 1;
+          ctx.moveTo(x + 1, y + CELL_HEIGHT - 3);
+          ctx.lineTo(x + CELL_WIDTH - 1, y + CELL_HEIGHT - 3);
+          ctx.stroke();
         }
 
         if (rowIndex === snapshot.cursor_row && colIndex === snapshot.cursor_col) {
