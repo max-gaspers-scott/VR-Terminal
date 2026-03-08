@@ -49,11 +49,21 @@ function encodeCtrlKey(key) {
       return '\x1d';
     case '^':
       return '\x1e';
+    case '/':
+    case '?':
     case '_':
       return '\x1f';
     default:
       return null;
   }
+}
+
+function encodeCtrlKeyEvent(event) {
+  if (event.code === 'Slash' || event.code === 'NumpadDivide') {
+    return '\x1f';
+  }
+
+  return encodeCtrlKey(event.key);
 }
 
 export function encodeKeyEvent(event) {
@@ -64,7 +74,7 @@ export function encodeKeyEvent(event) {
   let output = SPECIAL_KEYS[event.key] || null;
 
   if (!output && event.ctrlKey) {
-    output = encodeCtrlKey(event.key);
+    output = encodeCtrlKeyEvent(event);
   }
 
   if (!output && event.key.length === 1 && !event.ctrlKey) {

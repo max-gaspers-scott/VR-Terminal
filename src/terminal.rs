@@ -80,6 +80,79 @@ impl TerminalGrid {
         }
     }
 
+    fn styled_blank_cell(&self) -> Cell {
+        Cell {
+            ch: ' ',
+            fg: self.current_fg,
+            bg: self.current_bg,
+            bold: self.current_bold,
+            underline: self.current_underline,
+            reverse: self.current_reverse,
+        }
+    }
+
+    fn first_param(params: &Params, default: u16) -> u16 {
+        params
+            .iter()
+            .next()
+            .and_then(|param| param.first())
+            .copied()
+            .unwrap_or(default)
+    }
+
+    fn set_cursor(&mut self, row: usize, col: usize) {
+        self.cursor_row = row.min(self.rows.saturating_sub(1));
+        self.cursor_col = col.min(self.cols.saturating_sub(1));
+    }
+
+    fn clear_row_range(&mut self, row: usize, start: usize, end: usize) {
+        if row >= self.rows || start >= end {
+            return;
+        }
+
+        let blank = self.styled_blank_cell();
+        for cell in self.grid[row][start.min(self.cols)..end.min(self.cols)].iter_mut() {
+            *cell = blank.clone();
+        }
+    }
+
+    fn clear_rows(&mut self, start_row: usize, end_row: usize) {
+        if start_row >= end_row {
+            return;
+        }
+
+        let blank = self.styled_blank_cell();
+        for row in self.grid[start_row.min(self.rows)..end_row.min(self.rows)].iter_mut() {
+            for cell in row.iter_mut() {
+                *cell = blank.clone();
+            }
+        }
+    }
+
+    fn erase_in_display(&mut self, mode: u16) {
+        match mode {
+            0 => {
+                self.clear_row_range(self.cursor_row, self.cursor_col, self.cols);
+                self.clear_rows(self.cursor_row.saturating_add(1), self.rows);
+            }
+            1 => {
+                self.clear_rows(0, self.cursor_row);
+                self.clear_row_range(self.cursor_row, 0, self.cursor_col.saturating_add(1));
+            }
+            2 | 3 => self.clear_rows(0, self.rows),
+            _ => {}
+        }
+    }
+
+    fn erase_in_line(&mut self, mode: u16) {
+        match mode {
+            0 => self.clear_row_range(self.cursor_row, self.cursor_col, self.cols),
+            1 => self.clear_row_range(self.cursor_row, 0, self.cursor_col.saturating_add(1)),
+            2 => self.clear_row_range(self.cursor_row, 0, self.cols),
+            _ => {}
+        }
+    }
+
     fn reset_attributes(&mut self) {
         self.current_fg = DEFAULT_FG;
         self.current_bg = DEFAULT_BG;
@@ -296,8 +369,33 @@ impl Perform for TerminalGrid {
                 let mut iter = params.iter();
                 let row = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as usize;
                 let col = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as usize;
-                self.cursor_row = (row.saturating_sub(1)).min(self.rows - 1);
-                self.cursor_col = (col.saturating_sub(1)).min(self.cols - 1);
+                self.set_cursor(row.saturating_sub(1), col.saturating_sub(1));
+            }
+            // Cursor up/down/right/left.
+            'A' => {
+                let amount = Self::first_param(params, 1) as usize;
+                self.cursor_row = self.cursor_row.saturating_sub(amount);
+            }
+            'B' => {
+                let amount = Self::first_param(params, 1) as usize;
+                self.cursor_row = (self.cursor_row + amount).min(self.rows.saturating_sub(1));
+            }
+            'C' => {
+                let amount = Self::first_param(params, 1) as usize;
+                self.cursor_col = (self.cursor_col + amount).min(self.cols.saturating_sub(1));
+            }
+            'D' => {
+                let amount = Self::first_param(params, 1) as usize;
+                self.cursor_col = self.cursor_col.saturating_sub(amount);
+            }
+            // Horizontal / vertical absolute cursor positioning.
+            'G' => {
+                let col = Self::first_param(params, 1) as usize;
+                self.cursor_col = col.saturating_sub(1).min(self.cols.saturating_sub(1));
+            }
+            'd' => {
+                let row = Self::first_param(params, 1) as usize;
+                self.cursor_row = row.saturating_sub(1).min(self.rows.saturating_sub(1));
             }
             // SGR: colors and attributes ESC[...m
             'm' => {
@@ -307,22 +405,9 @@ impl Perform for TerminalGrid {
                     .collect();
                 self.apply_sgr(&sgr_params);
             }
-            // Erase display: ESC[2J
-            'J' => {
-                let blank = Cell {
-                    ch: ' ',
-                    fg: self.current_fg,
-                    bg: self.current_bg,
-                    bold: self.current_bold,
-                    underline: self.current_underline,
-                    reverse: self.current_reverse,
-                };
-                for row in self.grid.iter_mut() {
-                    for cell in row.iter_mut() {
-                        *cell = blank.clone();
-                    }
-                }
-            }
+            // Erase display / erase line.
+            'J' => self.erase_in_display(Self::first_param(params, 0)),
+            'K' => self.erase_in_line(Self::first_param(params, 0)),
             _ => {}
         }
     }
@@ -335,6 +420,9 @@ impl Perform for TerminalGrid {
             }
             b'\r' => {
                 self.cursor_col = 0;
+            }
+            b'\x08' => {
+                self.cursor_col = self.cursor_col.saturating_sub(1);
             }
             _ => {}
         }
@@ -368,7 +456,7 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiv
         })
         .unwrap();
 
-    let cmd = CommandBuilder::new("nvim");
+    let cmd = CommandBuilder::new("tmux");
     let child = pair.slave.spawn_command(cmd).unwrap();
     // Drop the slave fd in *this* process. The master reader only returns EIO
     // (signalling EOF) once every holder of the slave fd has closed it.
@@ -450,7 +538,7 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiv
                 // Feed bytes to vte — it calls back into grid
                 parser.advance(&mut grid, &buf[..n]);
                 let _ = tx.send(grid.snapshot());
-                print_grid(&grid);
+                // print_grid(&grid);
                 // At this point grid.grid is up to date — render it however you want
                 // For now just print the top-left cell as a sanity check:
                 // println!("{}", grid.grid[0][0].ch);
@@ -550,5 +638,58 @@ mod tests {
         assert!(cell.bold);
         assert!(cell.underline);
         assert!(cell.reverse);
+    }
+
+    #[test]
+    fn erase_in_line_clears_stale_characters_after_shorter_redraw() {
+        let mut grid = TerminalGrid::new(1, 8);
+        let mut parser = Parser::new();
+
+        parser.advance(&mut grid, b"LAZYVIM");
+        parser.advance(&mut grid, b"\rabc\x1b[K");
+
+        let rendered: String = grid.grid[0].iter().map(|cell| cell.ch).collect();
+        assert_eq!(rendered, "abc     ");
+    }
+
+    #[test]
+    fn cursor_backward_sequence_moves_write_position() {
+        let mut grid = TerminalGrid::new(1, 4);
+        let mut parser = Parser::new();
+
+        parser.advance(&mut grid, b"ABCD\x1b[2DZ");
+
+        let rendered: String = grid.grid[0].iter().map(|cell| cell.ch).collect();
+        assert_eq!(rendered, "ABZD");
+        assert_eq!(grid.cursor_col, 3);
+    }
+
+    #[test]
+    fn backspace_moves_cursor_left_for_overwrite() {
+        let mut grid = TerminalGrid::new(1, 3);
+        let mut parser = Parser::new();
+
+        parser.advance(&mut grid, b"AB\x08Z");
+
+        let rendered: String = grid.grid[0].iter().map(|cell| cell.ch).collect();
+        assert_eq!(rendered, "AZ ");
+        assert_eq!(grid.cursor_col, 2);
+    }
+
+    #[test]
+    fn tmux_clear_sequence_clears_visible_grid() {
+        let mut grid = TerminalGrid::new(2, 5);
+        let mut parser = Parser::new();
+
+        parser.advance(&mut grid, b"HELLO\r\nWORLD");
+        parser.advance(&mut grid, b"\x1b[H\x1b[J\x1b[3J");
+
+        assert!(grid
+            .grid
+            .iter()
+            .flatten()
+            .all(|cell| cell.ch == ' '));
+        assert_eq!(grid.cursor_row, 0);
+        assert_eq!(grid.cursor_col, 0);
     }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 
 const CELL_WIDTH = 11;
 const CELL_HEIGHT = 20;
@@ -319,7 +319,7 @@ function drawBlockGlyph(ctx, ch, cell, x, y, colors) {
 export default function TerminalCanvas({ snapshot }) {
   const canvasRef = useRef(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!snapshot || !canvasRef.current) {
       return;
     }
@@ -388,7 +388,7 @@ export default function TerminalCanvas({ snapshot }) {
         }
       });
     });
-  }, [snapshot]);
+  });
 
   if (!snapshot) {
     return <div className="terminal-placeholder">Waiting for terminal stream…</div>;

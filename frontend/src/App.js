@@ -1,9 +1,16 @@
 import './App.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TerminalCanvas from './TerminalCanvas';
 import { encodeKeyEvent } from './terminalInput';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8081';
+
+function cloneTerminalSnapshot(snapshot) {
+  return {
+    ...snapshot,
+    grid: snapshot.grid.map((row) => row.map((cell) => ({ ...cell }))),
+  };
+}
 
 function App() {
   const [apiStatus, setApiStatus] = useState('');
@@ -40,7 +47,7 @@ function App() {
     });
 
     socket.on('terminal-grid', (snapshot) => {
-      setTerminalSnapshot(snapshot);
+      setTerminalSnapshot(cloneTerminalSnapshot(snapshot));
     });
 
     return () => {
@@ -76,19 +83,40 @@ function App() {
     }
   };
 
-  const handleTerminalKeyDown = (event) => {
+  const emitTerminalInput = useCallback((encoded) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('terminal-input', encoded);
+    }
+  }, []);
+
+  const handleTerminalKeyDown = useCallback((event) => {
     const encoded = encodeKeyEvent(event);
     if (!encoded) {
-      return;
+      return false;
     }
 
     event.preventDefault();
     event.stopPropagation();
+    emitTerminalInput(encoded);
 
-    if (socketRef.current?.connected) {
-      socketRef.current.emit('terminal-input', encoded);
+    return true;
+  }, [emitTerminalInput]);
+
+  useEffect(() => {
+    if (!terminalFocused) {
+      return undefined;
     }
-  };
+
+    const handleDocumentKeyDown = (event) => {
+      handleTerminalKeyDown(event);
+    };
+
+    document.addEventListener('keydown', handleDocumentKeyDown, true);
+
+    return () => {
+      document.removeEventListener('keydown', handleDocumentKeyDown, true);
+    };
+  }, [handleTerminalKeyDown, terminalFocused]);
 
   return (
     <div className="App">
@@ -121,7 +149,6 @@ function App() {
           tabIndex={0}
           onFocus={() => setTerminalFocused(true)}
           onBlur={() => setTerminalFocused(false)}
-          onKeyDown={handleTerminalKeyDown}
           onMouseDown={() => terminalShellRef.current?.focus()}
         >
           <TerminalCanvas snapshot={terminalSnapshot} />
