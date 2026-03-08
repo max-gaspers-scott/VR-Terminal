@@ -1,0 +1,12 @@
+/home/mgs/VR-Terminal/target/debug/deps/serial2-0e35b52ea816287e.d: /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/lib.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/sys/mod.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/sys/unix/mod.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/into_settings.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/serial_port.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/settings.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/os.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/sys/unix/linux/mod.rs
+
+/home/mgs/VR-Terminal/target/debug/deps/libserial2-0e35b52ea816287e.rmeta: /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/lib.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/sys/mod.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/sys/unix/mod.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/into_settings.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/serial_port.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/settings.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/os.rs /home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/sys/unix/linux/mod.rs
+
+/home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/lib.rs:
+/home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/sys/mod.rs:
+/home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/sys/unix/mod.rs:
+/home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/into_settings.rs:
+/home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/serial_port.rs:
+/home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/settings.rs:
+/home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/os.rs:
+/home/mgs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serial2-0.2.34/src/sys/unix/linux/mod.rs:

@@ -1,0 +1,361 @@
+import { useEffect, useRef } from 'react';
+
+const CELL_WIDTH = 11;
+const CELL_HEIGHT = 20;
+const FONT_SIZE = 15;
+const FONT_FAMILY = '"DejaVu Sans Mono", "Noto Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
+const toRgb = ([r, g, b]) => `rgb(${r}, ${g}, ${b})`;
+
+function fillHorizontal(ctx, x, y, width, thickness) {
+  const top = Math.round(y + (CELL_HEIGHT - thickness) / 2);
+  ctx.fillRect(x, top, width, thickness);
+}
+
+function fillVertical(ctx, x, y, height, thickness) {
+  const left = Math.round(x + (CELL_WIDTH - thickness) / 2);
+  ctx.fillRect(left, y, thickness, height);
+}
+
+function fillUpper(ctx, x, y, thickness) {
+  const left = Math.round(x + (CELL_WIDTH - thickness) / 2);
+  ctx.fillRect(left, y, thickness, CELL_HEIGHT / 2);
+}
+
+function fillLower(ctx, x, y, thickness) {
+  const left = Math.round(x + (CELL_WIDTH - thickness) / 2);
+  ctx.fillRect(left, y + CELL_HEIGHT / 2, thickness, Math.ceil(CELL_HEIGHT / 2));
+}
+
+function fillStart(ctx, x, y, thickness) {
+  const top = Math.round(y + (CELL_HEIGHT - thickness) / 2);
+  ctx.fillRect(x, top, CELL_WIDTH / 2, thickness);
+}
+
+function fillEnd(ctx, x, y, thickness) {
+  const top = Math.round(y + (CELL_HEIGHT - thickness) / 2);
+  ctx.fillRect(x + CELL_WIDTH / 2, top, Math.ceil(CELL_WIDTH / 2), thickness);
+}
+
+function drawDoubleHorizontal(ctx, x, y) {
+  ctx.fillRect(x, y + 6, CELL_WIDTH, 2);
+  ctx.fillRect(x, y + 12, CELL_WIDTH, 2);
+}
+
+function drawDoubleVertical(ctx, x, y) {
+  ctx.fillRect(x + 3, y, 2, CELL_HEIGHT);
+  ctx.fillRect(x + 7, y, 2, CELL_HEIGHT);
+}
+
+function drawDoubleCorner(ctx, x, y, parts) {
+  if (parts.includes('right')) {
+    ctx.fillRect(x + Math.floor(CELL_WIDTH / 2), y + 6, Math.ceil(CELL_WIDTH / 2), 2);
+    ctx.fillRect(x + Math.floor(CELL_WIDTH / 2), y + 12, Math.ceil(CELL_WIDTH / 2), 2);
+  }
+  if (parts.includes('left')) {
+    ctx.fillRect(x, y + 6, Math.ceil(CELL_WIDTH / 2), 2);
+    ctx.fillRect(x, y + 12, Math.ceil(CELL_WIDTH / 2), 2);
+  }
+  if (parts.includes('up')) {
+    ctx.fillRect(x + 3, y, 2, Math.ceil(CELL_HEIGHT / 2));
+    ctx.fillRect(x + 7, y, 2, Math.ceil(CELL_HEIGHT / 2));
+  }
+  if (parts.includes('down')) {
+    ctx.fillRect(x + 3, y + Math.floor(CELL_HEIGHT / 2), 2, Math.ceil(CELL_HEIGHT / 2));
+    ctx.fillRect(x + 7, y + Math.floor(CELL_HEIGHT / 2), 2, Math.ceil(CELL_HEIGHT / 2));
+  }
+}
+
+function drawRoundedCorner(ctx, x, y, corner) {
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  switch (corner) {
+    case 'tl':
+      ctx.moveTo(x + CELL_WIDTH / 2, y + CELL_HEIGHT);
+      ctx.lineTo(x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 + 1);
+      ctx.quadraticCurveTo(x + CELL_WIDTH / 2, y + 2, x + CELL_WIDTH, y + 2);
+      break;
+    case 'tr':
+      ctx.moveTo(x + CELL_WIDTH / 2, y + CELL_HEIGHT);
+      ctx.lineTo(x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 + 1);
+      ctx.quadraticCurveTo(x + CELL_WIDTH / 2, y + 2, x, y + 2);
+      break;
+    case 'bl':
+      ctx.moveTo(x + CELL_WIDTH / 2, y);
+      ctx.lineTo(x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 - 1);
+      ctx.quadraticCurveTo(x + CELL_WIDTH / 2, y + CELL_HEIGHT - 2, x + CELL_WIDTH, y + CELL_HEIGHT - 2);
+      break;
+    case 'br':
+      ctx.moveTo(x + CELL_WIDTH / 2, y);
+      ctx.lineTo(x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 - 1);
+      ctx.quadraticCurveTo(x + CELL_WIDTH / 2, y + CELL_HEIGHT - 2, x, y + CELL_HEIGHT - 2);
+      break;
+    default:
+      return false;
+  }
+  ctx.stroke();
+  return true;
+}
+
+function drawShade(ctx, x, y, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
+  ctx.restore();
+  return true;
+}
+
+function drawQuadrant(ctx, x, y, ch) {
+  const halfW = Math.ceil(CELL_WIDTH / 2);
+  const halfH = Math.ceil(CELL_HEIGHT / 2);
+  switch (ch) {
+    case '▘':
+      ctx.fillRect(x, y, halfW, halfH);
+      return true;
+    case '▝':
+      ctx.fillRect(x + CELL_WIDTH - halfW, y, halfW, halfH);
+      return true;
+    case '▖':
+      ctx.fillRect(x, y + CELL_HEIGHT - halfH, halfW, halfH);
+      return true;
+    case '▗':
+      ctx.fillRect(x + CELL_WIDTH - halfW, y + CELL_HEIGHT - halfH, halfW, halfH);
+      return true;
+    case '▚':
+      ctx.fillRect(x, y, halfW, halfH);
+      ctx.fillRect(x + CELL_WIDTH - halfW, y + CELL_HEIGHT - halfH, halfW, halfH);
+      return true;
+    case '▞':
+      ctx.fillRect(x + CELL_WIDTH - halfW, y, halfW, halfH);
+      ctx.fillRect(x, y + CELL_HEIGHT - halfH, halfW, halfH);
+      return true;
+    default:
+      return false;
+  }
+}
+
+function drawBlockGlyph(ctx, ch, cell, x, y) {
+  ctx.fillStyle = toRgb(cell.fg);
+  switch (ch) {
+    case '█':
+      ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
+      return true;
+    case '▀':
+      ctx.fillRect(x, y, CELL_WIDTH, Math.ceil(CELL_HEIGHT / 2));
+      return true;
+    case '▄':
+      ctx.fillRect(x, y + Math.floor(CELL_HEIGHT / 2), CELL_WIDTH, Math.ceil(CELL_HEIGHT / 2));
+      return true;
+    case '▌':
+      ctx.fillRect(x, y, Math.ceil(CELL_WIDTH / 2), CELL_HEIGHT);
+      return true;
+    case '▐':
+      ctx.fillRect(x + Math.floor(CELL_WIDTH / 2), y, Math.ceil(CELL_WIDTH / 2), CELL_HEIGHT);
+      return true;
+    case '░':
+      return drawShade(ctx, x, y, 0.25);
+    case '▒':
+      return drawShade(ctx, x, y, 0.5);
+    case '▓':
+      return drawShade(ctx, x, y, 0.75);
+    case '▘':
+    case '▝':
+    case '▖':
+    case '▗':
+    case '▚':
+    case '▞':
+      return drawQuadrant(ctx, x, y, ch);
+    case '─':
+      fillHorizontal(ctx, x, y, CELL_WIDTH, 2);
+      return true;
+    case '━':
+      fillHorizontal(ctx, x, y, CELL_WIDTH, 3);
+      return true;
+    case '│':
+      fillVertical(ctx, x, y, CELL_HEIGHT, 2);
+      return true;
+    case '┃':
+      fillVertical(ctx, x, y, CELL_HEIGHT, 3);
+      return true;
+    case '┌':
+      fillEnd(ctx, x, y, 2);
+      fillLower(ctx, x, y, 2);
+      return true;
+    case '┐':
+      fillStart(ctx, x, y, 2);
+      fillLower(ctx, x, y, 2);
+      return true;
+    case '└':
+      fillEnd(ctx, x, y, 2);
+      fillUpper(ctx, x, y, 2);
+      return true;
+    case '┘':
+      fillStart(ctx, x, y, 2);
+      fillUpper(ctx, x, y, 2);
+      return true;
+    case '├':
+      fillEnd(ctx, x, y, 2);
+      fillVertical(ctx, x, y, CELL_HEIGHT, 2);
+      return true;
+    case '┤':
+      fillStart(ctx, x, y, 2);
+      fillVertical(ctx, x, y, CELL_HEIGHT, 2);
+      return true;
+    case '┬':
+      fillHorizontal(ctx, x, y, CELL_WIDTH, 2);
+      fillLower(ctx, x, y, 2);
+      return true;
+    case '┴':
+      fillHorizontal(ctx, x, y, CELL_WIDTH, 2);
+      fillUpper(ctx, x, y, 2);
+      return true;
+    case '┼':
+      fillHorizontal(ctx, x, y, CELL_WIDTH, 2);
+      fillVertical(ctx, x, y, CELL_HEIGHT, 2);
+      return true;
+    case '┏':
+      fillEnd(ctx, x, y, 3);
+      fillLower(ctx, x, y, 3);
+      return true;
+    case '┓':
+      fillStart(ctx, x, y, 3);
+      fillLower(ctx, x, y, 3);
+      return true;
+    case '┗':
+      fillEnd(ctx, x, y, 3);
+      fillUpper(ctx, x, y, 3);
+      return true;
+    case '┛':
+      fillStart(ctx, x, y, 3);
+      fillUpper(ctx, x, y, 3);
+      return true;
+    case '┣':
+      fillEnd(ctx, x, y, 3);
+      fillVertical(ctx, x, y, CELL_HEIGHT, 3);
+      return true;
+    case '┫':
+      fillStart(ctx, x, y, 3);
+      fillVertical(ctx, x, y, CELL_HEIGHT, 3);
+      return true;
+    case '┳':
+      fillHorizontal(ctx, x, y, CELL_WIDTH, 3);
+      fillLower(ctx, x, y, 3);
+      return true;
+    case '┻':
+      fillHorizontal(ctx, x, y, CELL_WIDTH, 3);
+      fillUpper(ctx, x, y, 3);
+      return true;
+    case '╋':
+      fillHorizontal(ctx, x, y, CELL_WIDTH, 3);
+      fillVertical(ctx, x, y, CELL_HEIGHT, 3);
+      return true;
+    case '═':
+      drawDoubleHorizontal(ctx, x, y);
+      return true;
+    case '║':
+      drawDoubleVertical(ctx, x, y);
+      return true;
+    case '╔':
+      drawDoubleCorner(ctx, x, y, ['right', 'down']);
+      return true;
+    case '╗':
+      drawDoubleCorner(ctx, x, y, ['left', 'down']);
+      return true;
+    case '╚':
+      drawDoubleCorner(ctx, x, y, ['right', 'up']);
+      return true;
+    case '╝':
+      drawDoubleCorner(ctx, x, y, ['left', 'up']);
+      return true;
+    case '╠':
+      drawDoubleCorner(ctx, x, y, ['right', 'up', 'down']);
+      return true;
+    case '╣':
+      drawDoubleCorner(ctx, x, y, ['left', 'up', 'down']);
+      return true;
+    case '╦':
+      drawDoubleCorner(ctx, x, y, ['left', 'right', 'down']);
+      return true;
+    case '╩':
+      drawDoubleCorner(ctx, x, y, ['left', 'right', 'up']);
+      return true;
+    case '╬':
+      drawDoubleCorner(ctx, x, y, ['left', 'right', 'up', 'down']);
+      return true;
+    case '╭':
+      return drawRoundedCorner(ctx, x, y, 'tl');
+    case '╮':
+      return drawRoundedCorner(ctx, x, y, 'tr');
+    case '╰':
+      return drawRoundedCorner(ctx, x, y, 'bl');
+    case '╯':
+      return drawRoundedCorner(ctx, x, y, 'br');
+    default:
+      return false;
+  }
+}
+
+export default function TerminalCanvas({ snapshot }) {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    if (!snapshot || !canvasRef.current) {
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+
+    const width = snapshot.cols * CELL_WIDTH;
+    const height = snapshot.rows * CELL_HEIGHT;
+    const ratio = window.devicePixelRatio || 1;
+
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    snapshot.grid.forEach((row, rowIndex) => {
+      row.forEach((cell, colIndex) => {
+        const x = colIndex * CELL_WIDTH;
+        const y = rowIndex * CELL_HEIGHT;
+
+        ctx.fillStyle = toRgb(cell.bg);
+        ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
+
+        if (!drawBlockGlyph(ctx, cell.ch, cell, x, y) && cell.ch !== ' ') {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x, y, CELL_WIDTH, CELL_HEIGHT);
+          ctx.clip();
+          ctx.fillStyle = toRgb(cell.fg);
+          ctx.fillText(cell.ch, x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 + 0.5);
+          ctx.restore();
+        }
+
+        if (rowIndex === snapshot.cursor_row && colIndex === snapshot.cursor_col) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 0.5, y + 0.5, CELL_WIDTH - 1, CELL_HEIGHT - 1);
+        }
+      });
+    });
+  }, [snapshot]);
+
+  if (!snapshot) {
+    return <div className="terminal-placeholder">Waiting for terminal stream…</div>;
+  }
+
+  return <canvas ref={canvasRef} className="terminal-canvas" />;
+}

@@ -1,29 +1,13 @@
-use axum::http::Method;
-use axum::http::StatusCode;
-use axum::{
-    Json, Router,
-    extract::{self, Path, Query},
-    routing::{get, post},
-};
-use minio_rsc::{Minio, client::PresignedArgs, provider::StaticProvider};
-use reqwest;
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use socketioxide;
-use sqlx::PgPool;
-use sqlx::types::chrono::Utc;
-use sqlx::{postgres::PgPoolOptions, prelude::FromRow};
-use std::collections::HashMap;
-use std::env;
-use std::net::SocketAddr;
-use std::result::Result;
-use std::sync::Arc;
-mod terminal;
-use terminal::main_terminal;
-use tower_http::cors::{AllowOrigin, CorsLayer};
-
+use axum::http::{Method, StatusCode};
 use axum::response::{Html, IntoResponse};
+use axum::{Router, routing::get};
+use socketioxide::{SocketIo, extract::SocketRef};
+use std::result::Result;
+use tokio::sync::watch;
+mod terminal;
+use terminal::{DEFAULT_COLS, DEFAULT_ROWS, TerminalSnapshot, main_terminal};
 use tower::service_fn;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 
 async fn health() -> String {
@@ -32,7 +16,31 @@ async fn health() -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    main_terminal();
+    let (terminal_tx, terminal_rx) =
+        watch::channel(TerminalSnapshot::blank(DEFAULT_ROWS, DEFAULT_COLS));
+
+    std::thread::spawn(move || {
+        main_terminal(terminal_tx);
+    });
+
+    let (layer, io) = SocketIo::new_layer();
+    io.ns("/", move |s: SocketRef| {
+        let mut terminal_rx = terminal_rx.clone();
+        async move {
+            s.emit("terminal-grid", &*terminal_rx.borrow()).ok();
+
+            let socket = s.clone();
+            tokio::spawn(async move {
+                while terminal_rx.changed().await.is_ok() {
+                    let snapshot = terminal_rx.borrow().clone();
+                    if socket.emit("terminal-grid", &snapshot).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+
     let static_service =
         ServeDir::new("frontend/build").not_found_service(service_fn(|_req| async {
             match tokio::fs::read_to_string("frontend/build/index.html").await {
@@ -57,7 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ]))
                 .allow_methods([Method::GET, Method::POST])
                 .allow_headers(tower_http::cors::Any),
-        );
+        )
+        .layer(layer);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8081").await.unwrap();
 

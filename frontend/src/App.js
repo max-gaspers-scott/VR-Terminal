@@ -1,18 +1,60 @@
-import logo from './logo.svg';
 import './App.css';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import TerminalCanvas from './TerminalCanvas';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8081';
 
 function App() {
   const [apiStatus, setApiStatus] = useState('');
+  const [socketStatus, setSocketStatus] = useState('connecting');
+  const [socketError, setSocketError] = useState('');
+  const [terminalSnapshot, setTerminalSnapshot] = useState(null);
+
+  useEffect(() => {
+    if (typeof window.io !== 'function') {
+      setSocketStatus('client-missing');
+      setSocketError('Socket.IO client script is not loaded.');
+      return undefined;
+    }
+
+    const socket = window.io(API_URL, { path: '/socket.io' });
+
+    socket.on('connect', () => {
+      setSocketStatus('connected');
+      setSocketError('');
+    });
+
+    socket.on('disconnect', () => {
+      setSocketStatus('disconnected');
+    });
+
+    socket.on('connect_error', (error) => {
+      setSocketStatus('error');
+      setSocketError(error.message);
+    });
+
+    socket.on('terminal-grid', (snapshot) => {
+      setTerminalSnapshot(snapshot);
+    });
+
+    return () => {
+      socket.close();
+    };
+  }, []);
+
+  const dimensionsLabel = useMemo(() => {
+    if (!terminalSnapshot) {
+      return 'waiting for grid';
+    }
+
+    return `${terminalSnapshot.cols} × ${terminalSnapshot.rows}`;
+  }, [terminalSnapshot]);
 
   const checkApiHealth = async () => {
-    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8081';
     try {
-      const response = await fetch(`${apiUrl}/health`);
+      const response = await fetch(`${API_URL}/health`);
       if (response.ok) {
         const data = await response.text();
-        // The user said the endpoint should return 'healthy' or an error.
-        // We will check if the response body contains 'healthy'.
         if (data.toLowerCase().includes('healthy')) {
           setApiStatus('Backend API is healthy!');
         } else {
@@ -29,24 +71,30 @@ function App() {
 
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Click the button to check the backend API health.
-        </p>
-        <button onClick={checkApiHealth} className="App-button">
-          Check API Health
-        </button>
-        {apiStatus && <p>{apiStatus}</p>}
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <div className="App-shell">
+        <div className="App-toolbar">
+          <div>
+            <h1>Terminal Viewer</h1>
+            <p>Live canvas rendering for the streamed terminal grid.</p>
+          </div>
+          <div className="App-actions">
+            <button onClick={checkApiHealth} className="App-button">
+              Check API Health
+            </button>
+            <span className={`status-pill status-${socketStatus}`}>
+              Socket: {socketStatus}
+            </span>
+            <span className="status-pill">Grid: {dimensionsLabel}</span>
+          </div>
+        </div>
+
+        {apiStatus && <p className="info-banner">{apiStatus}</p>}
+        {socketError && <p className="info-banner info-banner-error">{socketError}</p>}
+
+        <div className="terminal-shell">
+          <TerminalCanvas snapshot={terminalSnapshot} />
+        </div>
+      </div>
     </div>
   );
 }

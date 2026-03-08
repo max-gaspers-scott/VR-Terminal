@@ -1,53 +1,108 @@
 .App {
-  text-align: center;
-}
-
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
+  background: #11161d;
   min-height: 100vh;
+  color: #f4f7fb;
+}
+
+.App-shell {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.App-toolbar {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.App-toolbar h1 {
+  margin: 0 0 8px;
+  font-size: 2rem;
+}
+
+.App-toolbar p {
+  margin: 0;
+  color: #9fb0c4;
+}
+
+.App-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
-}
-
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .App-button {
-  background-color: #61dafb;
-  color: #282c34;
-  font-size: calc(10px + 2vmin);
-  padding: 10px 20px;
+  background: #6ed6ff;
+  color: #10202b;
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 10px 16px;
   border: none;
-  border-radius: 5px;
+  border-radius: 8px;
   cursor: pointer;
-  margin-top: 20px;
 }
 
 .App-button:hover {
-  background-color: #4fa8c5;
+  background: #8ae0ff;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #1a2430;
+  color: #dbe5f0;
+  border: 1px solid #31404f;
+  font-size: 0.95rem;
+}
+
+.status-connected {
+  background: #163525;
+  border-color: #2e9f68;
+}
+
+.status-error,
+.status-client-missing {
+  background: #3a1d1d;
+  border-color: #d05a5a;
+}
+
+.terminal-shell {
+  overflow: auto;
+  padding: 16px;
+  background: #0b0f14;
+  border: 1px solid #263241;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.terminal-canvas {
+  display: block;
+}
+
+.terminal-placeholder {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  color: #8ea3b8;
+}
+
+.info-banner {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #182330;
+  color: #dce8f5;
+}
+
+.info-banner-error {
+  background: #331d1d;
+  color: #ffd4d4;
 }

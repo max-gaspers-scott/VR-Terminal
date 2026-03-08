@@ -1,13 +1,36 @@
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use serde::Serialize;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
+use tokio::sync::watch;
 use vte::{Params, Parser, Perform};
+
+pub const DEFAULT_ROWS: usize = 40;
+pub const DEFAULT_COLS: usize = 120;
+const DEFAULT_FG: [u8; 3] = [255, 255, 255];
+const DEFAULT_BG: [u8; 3] = [0, 0, 0];
 
 #[derive(Clone)]
 struct Cell {
     ch: char,
     fg: [u8; 3],
     bg: [u8; 3],
+}
+
+#[derive(Clone, Serialize)]
+struct SnapshotCell {
+    ch: char,
+    fg: [u8; 3],
+    bg: [u8; 3],
+}
+
+#[derive(Clone, Serialize)]
+pub struct TerminalSnapshot {
+    rows: usize,
+    cols: usize,
+    cursor_row: usize,
+    cursor_col: usize,
+    grid: Vec<Vec<SnapshotCell>>,
 }
 
 struct TerminalGrid {
@@ -22,11 +45,7 @@ struct TerminalGrid {
 
 impl TerminalGrid {
     fn new(rows: usize, cols: usize) -> Self {
-        let blank = Cell {
-            ch: ' ',
-            fg: [255, 255, 255],
-            bg: [0, 0, 0],
-        };
+        let blank = Self::blank_cell();
         Self {
             grid: vec![vec![blank; cols]; rows],
             cursor_row: 0,
@@ -36,6 +55,168 @@ impl TerminalGrid {
             rows,
             cols,
         }
+    }
+
+    fn blank_cell() -> Cell {
+        Cell {
+            ch: ' ',
+            fg: DEFAULT_FG,
+            bg: DEFAULT_BG,
+        }
+    }
+
+    fn reset_colors(&mut self) {
+        self.current_fg = DEFAULT_FG;
+        self.current_bg = DEFAULT_BG;
+    }
+
+    fn apply_sgr(&mut self, params: &[u16]) {
+        if params.is_empty() {
+            self.reset_colors();
+            return;
+        }
+
+        let mut i = 0;
+        while i < params.len() {
+            match params[i] {
+                0 => {
+                    self.reset_colors();
+                    i += 1;
+                }
+                30..=37 => {
+                    self.current_fg = ansi_color((params[i] - 30) as u8);
+                    i += 1;
+                }
+                40..=47 => {
+                    self.current_bg = ansi_color((params[i] - 40) as u8);
+                    i += 1;
+                }
+                90..=97 => {
+                    self.current_fg = ansi_color((params[i] - 90 + 8) as u8);
+                    i += 1;
+                }
+                100..=107 => {
+                    self.current_bg = ansi_color((params[i] - 100 + 8) as u8);
+                    i += 1;
+                }
+                39 => {
+                    self.current_fg = DEFAULT_FG;
+                    i += 1;
+                }
+                49 => {
+                    self.current_bg = DEFAULT_BG;
+                    i += 1;
+                }
+                38 => {
+                    if let Some((color, consumed)) = parse_extended_color(params, i) {
+                        self.current_fg = color;
+                        i += consumed;
+                    } else {
+                        i += 1;
+                    }
+                }
+                48 => {
+                    if let Some((color, consumed)) = parse_extended_color(params, i) {
+                        self.current_bg = color;
+                        i += consumed;
+                    } else {
+                        i += 1;
+                    }
+                }
+                _ => {
+                    i += 1;
+                }
+            }
+        }
+    }
+
+    fn snapshot(&self) -> TerminalSnapshot {
+        TerminalSnapshot {
+            rows: self.rows,
+            cols: self.cols,
+            cursor_row: self.cursor_row,
+            cursor_col: self.cursor_col,
+            grid: self
+                .grid
+                .iter()
+                .map(|row| {
+                    row.iter()
+                        .map(|cell| SnapshotCell {
+                            ch: cell.ch,
+                            fg: cell.fg,
+                            bg: cell.bg,
+                        })
+                        .collect()
+                })
+                .collect(),
+        }
+    }
+}
+
+impl TerminalSnapshot {
+    pub fn blank(rows: usize, cols: usize) -> Self {
+        TerminalGrid::new(rows, cols).snapshot()
+    }
+}
+
+fn parse_extended_color(params: &[u16], index: usize) -> Option<([u8; 3], usize)> {
+    match params.get(index + 1).copied() {
+        Some(2) if index + 4 < params.len() => Some((
+            [
+                params[index + 2] as u8,
+                params[index + 3] as u8,
+                params[index + 4] as u8,
+            ],
+            5,
+        )),
+        Some(5) if index + 2 < params.len() => Some((xterm_256_color(params[index + 2] as u8), 3)),
+        _ => None,
+    }
+}
+
+fn ansi_color(index: u8) -> [u8; 3] {
+    match index {
+        0 => [0, 0, 0],
+        1 => [205, 49, 49],
+        2 => [13, 188, 121],
+        3 => [229, 229, 16],
+        4 => [36, 114, 200],
+        5 => [188, 63, 188],
+        6 => [17, 168, 205],
+        7 => [229, 229, 229],
+        8 => [102, 102, 102],
+        9 => [241, 76, 76],
+        10 => [35, 209, 139],
+        11 => [245, 245, 67],
+        12 => [59, 142, 234],
+        13 => [214, 112, 214],
+        14 => [41, 184, 219],
+        15 => [255, 255, 255],
+        _ => DEFAULT_FG,
+    }
+}
+
+fn xterm_256_color(index: u8) -> [u8; 3] {
+    match index {
+        0..=15 => ansi_color(index),
+        16..=231 => {
+            let cube = index - 16;
+            let r = cube / 36;
+            let g = (cube % 36) / 6;
+            let b = cube % 6;
+            [cube_component(r), cube_component(g), cube_component(b)]
+        }
+        232..=255 => {
+            let gray = 8 + (index - 232) * 10;
+            [gray, gray, gray]
+        }
+    }
+}
+
+fn cube_component(value: u8) -> u8 {
+    match value {
+        0 => 0,
+        _ => 55 + value * 40,
     }
 }
 
@@ -72,23 +253,8 @@ impl Perform for TerminalGrid {
             }
             // SGR: colors and attributes ESC[...m
             'm' => {
-                for param in params.iter() {
-                    match param {
-                        [0] => {
-                            self.current_fg = [255, 255, 255];
-                            self.current_bg = [0, 0, 0];
-                        }
-                        // Foreground RGB: ESC[38;2;r;g;bm  (vte flattens to one slice)
-                        [38, 2, r, g, b] => {
-                            self.current_fg = [*r as u8, *g as u8, *b as u8];
-                        }
-                        // Background RGB: ESC[48;2;r;g;bm
-                        [48, 2, r, g, b] => {
-                            self.current_bg = [*r as u8, *g as u8, *b as u8];
-                        }
-                        _ => {}
-                    }
-                }
+                let sgr_params: Vec<u16> = params.iter().flat_map(|param| param.iter().copied()).collect();
+                self.apply_sgr(&sgr_params);
             }
             // Erase display: ESC[2J
             'J' => {
@@ -133,9 +299,9 @@ fn print_grid(grid: &TerminalGrid) {
     }
     std::io::stdout().flush().unwrap();
 }
-pub fn main_terminal() {
-    let rows = 40usize;
-    let cols = 120usize;
+pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>) {
+    let rows = DEFAULT_ROWS;
+    let cols = DEFAULT_COLS;
     crossterm::terminal::enable_raw_mode().unwrap();
 
     let pty_system = native_pty_system();
@@ -148,7 +314,7 @@ pub fn main_terminal() {
         })
         .unwrap();
 
-    let cmd = CommandBuilder::new("nvim");
+    let cmd = CommandBuilder::new("btop");
     let child = pair.slave.spawn_command(cmd).unwrap();
     // Drop the slave fd in *this* process. The master reader only returns EIO
     // (signalling EOF) once every holder of the slave fd has closed it.
@@ -158,17 +324,17 @@ pub fn main_terminal() {
     let child = Arc::new(Mutex::new(child));
 
     // Thread 1: PTY output → your real stdout
-    let mut reader = pair.master.try_clone_reader().unwrap();
+    // let mut reader = pair.master.try_clone_reader().unwrap();
     // std::thread::spawn(move || {
     //     let mut buf = [0u8; 4096];
     //     let stdout = std::io::stdout();
-    //     let mut out = stdout.lock();
+    //     // let mut out = stdout.lock();
     //     loop {
     //         match reader.read(&mut buf) {
     //             Ok(0) | Err(_) => break,
     //             Ok(n) => {
-    //                 out.write_all(&buf[..n]).unwrap();
-    //                 out.flush().unwrap();
+    //                 // out.write_all(&buf[..n]).unwrap();
+    //                 // out.flush().unwrap();
     //             }
     //         }
     //     }
@@ -207,6 +373,7 @@ pub fn main_terminal() {
             Ok(n) => {
                 // Feed bytes to vte — it calls back into grid
                 parser.advance(&mut grid, &buf[..n]);
+                let _ = tx.send(grid.snapshot());
                 print_grid(&grid);
                 // At this point grid.grid is up to date — render it however you want
                 // For now just print the top-left cell as a sanity check:
@@ -218,4 +385,61 @@ pub fn main_terminal() {
     child.lock().unwrap().wait().unwrap();
 
     crossterm::terminal::disable_raw_mode().unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blank_snapshot_has_expected_size() {
+        let snapshot = TerminalSnapshot::blank(2, 3);
+
+        assert_eq!(snapshot.rows, 2);
+        assert_eq!(snapshot.cols, 3);
+        assert_eq!(snapshot.grid.len(), 2);
+        assert!(snapshot.grid.iter().all(|row| row.len() == 3));
+    }
+
+    #[test]
+    fn snapshot_captures_grid_contents_and_cursor() {
+        let mut grid = TerminalGrid::new(2, 3);
+        grid.print('A');
+
+        let snapshot = grid.snapshot();
+
+        assert_eq!(snapshot.grid[0][0].ch, 'A');
+        assert_eq!(snapshot.cursor_row, 0);
+        assert_eq!(snapshot.cursor_col, 1);
+    }
+
+    #[test]
+    fn sgr_basic_ansi_colors_update_current_colors() {
+        let mut grid = TerminalGrid::new(1, 1);
+
+        grid.apply_sgr(&[31, 44]);
+
+        assert_eq!(grid.current_fg, ansi_color(1));
+        assert_eq!(grid.current_bg, ansi_color(4));
+    }
+
+    #[test]
+    fn sgr_256_color_updates_foreground_and_background() {
+        let mut grid = TerminalGrid::new(1, 1);
+
+        grid.apply_sgr(&[38, 5, 196, 48, 5, 33]);
+
+        assert_eq!(grid.current_fg, xterm_256_color(196));
+        assert_eq!(grid.current_bg, xterm_256_color(33));
+    }
+
+    #[test]
+    fn sgr_truecolor_updates_foreground_and_background() {
+        let mut grid = TerminalGrid::new(1, 1);
+
+        grid.apply_sgr(&[38, 2, 12, 34, 56, 48, 2, 65, 43, 21]);
+
+        assert_eq!(grid.current_fg, [12, 34, 56]);
+        assert_eq!(grid.current_bg, [65, 43, 21]);
+    }
 }
