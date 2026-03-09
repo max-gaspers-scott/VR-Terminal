@@ -1,9 +1,11 @@
-import { useLayoutEffect, useRef } from 'react';
+import { forwardRef, useCallback, useLayoutEffect, useRef } from 'react';
 
 const CELL_WIDTH = 11;
 const CELL_HEIGHT = 20;
 const FONT_SIZE = 15;
 const FONT_FAMILY = '"DejaVu Sans Mono", "Noto Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+const DEFAULT_COLS = 120;
+const DEFAULT_ROWS = 40;
 
 const toRgb = ([r, g, b]) => `rgb(${r}, ${g}, ${b})`;
 
@@ -316,63 +318,48 @@ function drawBlockGlyph(ctx, ch, cell, x, y, colors) {
   }
 }
 
-export default function TerminalCanvas({ snapshot }) {
-  const canvasRef = useRef(null);
+function sizeCanvas(canvas, width, height, ratio) {
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+}
 
-  useLayoutEffect(() => {
-    if (!snapshot || !canvasRef.current) {
-      return;
-    }
+function snapshotHasVisibleContent(snapshot) {
+  return snapshot.grid.some((row) => row.some((cell) => cell.ch !== ' '));
+}
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return;
-    }
+function drawStatusCanvas(ctx, width, height, message) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#05070a';
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#0f1722';
+  ctx.fillRect(width * 0.08, height * 0.16, width * 0.84, height * 0.68);
+  ctx.fillStyle = '#8ea3b8';
+  ctx.font = `400 22px ${FONT_FAMILY}`;
+  ctx.fillText(message, width / 2, height / 2);
+}
 
-    const width = snapshot.cols * CELL_WIDTH;
-    const height = snapshot.rows * CELL_HEIGHT;
-    const ratio = window.devicePixelRatio || 1;
+function drawTerminalSnapshot(ctx, snapshot) {
+  snapshot.grid.forEach((row, rowIndex) => {
+    row.forEach((cell, colIndex) => {
+      const x = colIndex * CELL_WIDTH;
+      const y = rowIndex * CELL_HEIGHT;
+      const colors = getCellColors(cell);
 
-    canvas.width = width * ratio;
-    canvas.height = height * ratio;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+      ctx.fillStyle = toRgb(colors.bg);
+      ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
 
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+      if (!drawBlockGlyph(ctx, cell.ch, cell, x, y, colors) && cell.ch !== ' ') {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, CELL_WIDTH, CELL_HEIGHT);
+        ctx.clip();
+        ctx.fillStyle = toRgb(colors.fg);
+        ctx.font = `${cell.bold ? '700' : '400'} ${FONT_SIZE}px ${FONT_FAMILY}`;
+        ctx.fillText(cell.ch, x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 + 0.5);
 
-    snapshot.grid.forEach((row, rowIndex) => {
-      row.forEach((cell, colIndex) => {
-        const x = colIndex * CELL_WIDTH;
-        const y = rowIndex * CELL_HEIGHT;
-        const colors = getCellColors(cell);
-
-        ctx.fillStyle = toRgb(colors.bg);
-        ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
-
-        if (!drawBlockGlyph(ctx, cell.ch, cell, x, y, colors) && cell.ch !== ' ') {
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(x, y, CELL_WIDTH, CELL_HEIGHT);
-          ctx.clip();
-          ctx.fillStyle = toRgb(colors.fg);
-          ctx.font = `${cell.bold ? '700' : '400'} ${FONT_SIZE}px ${FONT_FAMILY}`;
-          ctx.fillText(cell.ch, x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 + 0.5);
-
-          if (cell.underline) {
-            ctx.beginPath();
-            ctx.strokeStyle = toRgb(colors.fg);
-            ctx.lineWidth = cell.bold ? 2 : 1;
-            ctx.moveTo(x + 1, y + CELL_HEIGHT - 3);
-            ctx.lineTo(x + CELL_WIDTH - 1, y + CELL_HEIGHT - 3);
-            ctx.stroke();
-          }
-
-          ctx.restore();
-        } else if (cell.underline) {
+        if (cell.underline) {
           ctx.beginPath();
           ctx.strokeStyle = toRgb(colors.fg);
           ctx.lineWidth = cell.bold ? 2 : 1;
@@ -381,18 +368,85 @@ export default function TerminalCanvas({ snapshot }) {
           ctx.stroke();
         }
 
-        if (rowIndex === snapshot.cursor_row && colIndex === snapshot.cursor_col) {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + 0.5, y + 0.5, CELL_WIDTH - 1, CELL_HEIGHT - 1);
-        }
-      });
+        ctx.restore();
+      } else if (cell.underline) {
+        ctx.beginPath();
+        ctx.strokeStyle = toRgb(colors.fg);
+        ctx.lineWidth = cell.bold ? 2 : 1;
+        ctx.moveTo(x + 1, y + CELL_HEIGHT - 3);
+        ctx.lineTo(x + CELL_WIDTH - 1, y + CELL_HEIGHT - 3);
+        ctx.stroke();
+      }
+
+      if (rowIndex === snapshot.cursor_row && colIndex === snapshot.cursor_col) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, CELL_WIDTH - 1, CELL_HEIGHT - 1);
+      }
     });
   });
+}
 
-  if (!snapshot) {
+const TerminalCanvas = forwardRef(function TerminalCanvas(
+  {
+    snapshot,
+    showPlaceholder = true,
+    canvasId,
+    className = 'terminal-canvas',
+  },
+  forwardedRef,
+) {
+  const localCanvasRef = useRef(null);
+
+  const setCanvasRef = useCallback((node) => {
+    localCanvasRef.current = node;
+
+    if (typeof forwardedRef === 'function') {
+      forwardedRef(node);
+    } else if (forwardedRef) {
+      forwardedRef.current = node;
+    }
+  }, [forwardedRef]);
+
+  useLayoutEffect(() => {
+    if (!localCanvasRef.current) {
+      return;
+    }
+
+    const canvas = localCanvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+
+    const width = (snapshot?.cols ?? DEFAULT_COLS) * CELL_WIDTH;
+    const height = (snapshot?.rows ?? DEFAULT_ROWS) * CELL_HEIGHT;
+    const ratio = window.devicePixelRatio || 1;
+
+    sizeCanvas(canvas, width, height, ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    if (!snapshot) {
+      drawStatusCanvas(ctx, width, height, 'Waiting for terminal stream…');
+      return;
+    }
+
+    if (!snapshotHasVisibleContent(snapshot)) {
+      drawStatusCanvas(ctx, width, height, 'Terminal connected. Waiting for output…');
+      return;
+    }
+
+    ctx.clearRect(0, 0, width, height);
+    drawTerminalSnapshot(ctx, snapshot);
+  });
+
+  if (!snapshot && showPlaceholder) {
     return <div className="terminal-placeholder">Waiting for terminal stream…</div>;
   }
 
-  return <canvas ref={canvasRef} className="terminal-canvas" />;
-}
+  return <canvas id={canvasId} ref={setCanvasRef} className={className} />;
+});
+
+export default TerminalCanvas;

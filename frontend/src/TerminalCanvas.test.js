@@ -53,6 +53,26 @@ test('shows placeholder before a snapshot arrives', () => {
   expect(screen.getByText(/waiting for terminal stream/i)).toBeInTheDocument();
 });
 
+test('draws a status message onto the canvas when placeholder mode is disabled and no snapshot has arrived', () => {
+  render(<TerminalCanvas snapshot={null} showPlaceholder={false} />);
+
+  expect(mockContext.fillText).toHaveBeenCalledWith(
+    'Waiting for terminal stream…',
+    expect.any(Number),
+    expect.any(Number),
+  );
+});
+
+test('draws a status message when the snapshot is present but blank', () => {
+  render(<TerminalCanvas snapshot={createSnapshot(' ')} showPlaceholder={false} />);
+
+  expect(mockContext.fillText).toHaveBeenCalledWith(
+    'Terminal connected. Waiting for output…',
+    expect.any(Number),
+    expect.any(Number),
+  );
+});
+
 test('repaints when the same snapshot object is mutated between renders', () => {
   const snapshot = createSnapshot('A');
   const { rerender } = render(<TerminalCanvas snapshot={snapshot} />);
@@ -64,5 +84,9 @@ test('repaints when the same snapshot object is mutated between renders', () => 
   rerender(<TerminalCanvas snapshot={snapshot} />);
 
   expect(mockContext.fillRect).toHaveBeenCalled();
-  expect(mockContext.fillText).not.toHaveBeenCalled();
+  expect(mockContext.fillText).toHaveBeenCalledWith(
+    'Terminal connected. Waiting for output…',
+    expect.any(Number),
+    expect.any(Number),
+  );
 });

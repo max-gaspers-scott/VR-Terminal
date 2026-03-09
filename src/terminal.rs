@@ -1,6 +1,7 @@
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Serialize;
-use std::io::{Read, Write};
+use std::io::{IsTerminal, Read, Write};
+use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
 use tokio::sync::watch;
 use vte::{Params, Parser, Perform};
@@ -43,6 +44,8 @@ struct TerminalGrid {
     grid: Vec<Vec<Cell>>,
     cursor_row: usize,
     cursor_col: usize,
+    scroll_region_top: usize,
+    scroll_region_bottom: usize,
     current_fg: [u8; 3],
     current_bg: [u8; 3],
     current_bold: bool,
@@ -59,6 +62,8 @@ impl TerminalGrid {
             grid: vec![vec![blank; cols]; rows],
             cursor_row: 0,
             cursor_col: 0,
+            scroll_region_top: 0,
+            scroll_region_bottom: rows.saturating_sub(1),
             current_fg: [255, 255, 255],
             current_bg: [0, 0, 0],
             current_bold: false,
@@ -91,6 +96,10 @@ impl TerminalGrid {
         }
     }
 
+    fn blank_row(&self) -> Vec<Cell> {
+        vec![self.styled_blank_cell(); self.cols]
+    }
+
     fn first_param(params: &Params, default: u16) -> u16 {
         params
             .iter()
@@ -100,9 +109,50 @@ impl TerminalGrid {
             .unwrap_or(default)
     }
 
+    fn nth_param(params: &Params, index: usize, default: u16) -> u16 {
+        params
+            .iter()
+            .nth(index)
+            .and_then(|param| param.first())
+            .copied()
+            .unwrap_or(default)
+    }
+
     fn set_cursor(&mut self, row: usize, col: usize) {
         self.cursor_row = row.min(self.rows.saturating_sub(1));
         self.cursor_col = col.min(self.cols.saturating_sub(1));
+    }
+
+    fn set_scroll_region(&mut self, top: usize, bottom: usize) {
+        if top >= self.rows || bottom >= self.rows || top >= bottom {
+            return;
+        }
+
+        self.scroll_region_top = top;
+        self.scroll_region_bottom = bottom;
+        self.set_cursor(0, 0);
+    }
+
+    fn scroll_up_region(&mut self, top: usize, bottom: usize) {
+        if top >= self.rows || bottom >= self.rows || top > bottom {
+            return;
+        }
+
+        if top == bottom {
+            self.grid[bottom] = self.blank_row();
+            return;
+        }
+
+        self.grid[top..=bottom].rotate_left(1);
+        self.grid[bottom] = self.blank_row();
+    }
+
+    fn linefeed(&mut self) {
+        if self.cursor_row == self.scroll_region_bottom {
+            self.scroll_up_region(self.scroll_region_top, self.scroll_region_bottom);
+        } else if self.cursor_row < self.rows.saturating_sub(1) {
+            self.cursor_row += 1;
+        }
     }
 
     fn clear_row_range(&mut self, row: usize, start: usize, end: usize) {
@@ -408,6 +458,20 @@ impl Perform for TerminalGrid {
             // Erase display / erase line.
             'J' => self.erase_in_display(Self::first_param(params, 0)),
             'K' => self.erase_in_line(Self::first_param(params, 0)),
+            'r' => {
+                let top = Self::nth_param(params, 0, 1);
+                let bottom = Self::nth_param(params, 1, self.rows as u16);
+                let top = if top == 0 { 1 } else { top } as usize;
+                let bottom = if bottom == 0 {
+                    self.rows as u16
+                } else {
+                    bottom
+                } as usize;
+
+                if top < bottom && bottom <= self.rows {
+                    self.set_scroll_region(top - 1, bottom - 1);
+                }
+            }
             _ => {}
         }
     }
@@ -416,7 +480,7 @@ impl Perform for TerminalGrid {
     fn execute(&mut self, byte: u8) {
         match byte {
             b'\n' => {
-                self.cursor_row = (self.cursor_row + 1).min(self.rows - 1);
+                self.linefeed();
             }
             b'\r' => {
                 self.cursor_col = 0;
@@ -441,10 +505,39 @@ fn print_grid(grid: &TerminalGrid) {
     }
     std::io::stdout().flush().unwrap();
 }
+
+fn preferred_terminal_program(shell_from_env: Option<&str>) -> String {
+    shell_from_env
+        .filter(|shell| !shell.trim().is_empty())
+        .filter(|shell| Path::new(shell).exists())
+        .unwrap_or("/bin/sh")
+        .to_string()
+}
+
+fn build_terminal_command(shell_from_env: Option<&str>) -> CommandBuilder {
+    let program = preferred_terminal_program(shell_from_env);
+    let mut cmd = CommandBuilder::new(program);
+    cmd.arg("-i");
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd
+}
+
 pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiver<Vec<u8>>) {
     let rows = DEFAULT_ROWS;
     let cols = DEFAULT_COLS;
-    crossterm::terminal::enable_raw_mode().unwrap();
+    let stdin_is_terminal = std::io::stdin().is_terminal();
+    let raw_mode_enabled = if stdin_is_terminal {
+        match crossterm::terminal::enable_raw_mode() {
+            Ok(()) => true,
+            Err(error) => {
+                eprintln!("failed to enable raw mode for local stdin bridge: {error}");
+                false
+            }
+        }
+    } else {
+        false
+    };
 
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -456,8 +549,14 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiv
         })
         .unwrap();
 
-    let cmd = CommandBuilder::new("tmux");
-    let child = pair.slave.spawn_command(cmd).unwrap();
+    let cmd = build_terminal_command(std::env::var("SHELL").ok().as_deref());
+    let child = match pair.slave.spawn_command(cmd) {
+        Ok(child) => child,
+        Err(error) => {
+            eprintln!("failed to spawn terminal process: {error}");
+            return;
+        }
+    };
     // Drop the slave fd in *this* process. The master reader only returns EIO
     // (signalling EOF) once every holder of the slave fd has closed it.
     // If we leave pair.slave open here, killing the child is not enough —
@@ -484,33 +583,35 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiv
 
     // Thread 2: your real stdin → PTY input
     let writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
-    let child_for_thread = Arc::clone(&child);
-    let writer_for_stdin = Arc::clone(&writer);
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        let stdin = std::io::stdin();
-        let mut inp = stdin.lock();
-        loop {
-            match inp.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    // Ctrl+C in raw mode arrives as byte 0x03 — kill the child and stop
-                    if buf[..n].contains(&0x03) {
-                        child_for_thread.lock().unwrap().kill().ok();
-                        break;
-                    }
-                    if writer_for_stdin
-                        .lock()
-                        .unwrap()
-                        .write_all(&buf[..n])
-                        .is_err()
-                    {
-                        break;
+    if raw_mode_enabled {
+        let child_for_thread = Arc::clone(&child);
+        let writer_for_stdin = Arc::clone(&writer);
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            let stdin = std::io::stdin();
+            let mut inp = stdin.lock();
+            loop {
+                match inp.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        // Ctrl+C in raw mode arrives as byte 0x03 — kill the child and stop
+                        if buf[..n].contains(&0x03) {
+                            child_for_thread.lock().unwrap().kill().ok();
+                            break;
+                        }
+                        if writer_for_stdin
+                            .lock()
+                            .unwrap()
+                            .write_all(&buf[..n])
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    }
 
     let child_for_socket = Arc::clone(&child);
     let writer_for_socket = Arc::clone(&writer);
@@ -548,7 +649,9 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiv
     // Wait for the child process to exit
     child.lock().unwrap().wait().unwrap();
 
-    crossterm::terminal::disable_raw_mode().unwrap();
+    if raw_mode_enabled {
+        crossterm::terminal::disable_raw_mode().ok();
+    }
 }
 
 #[cfg(test)]
@@ -640,6 +743,13 @@ mod tests {
         assert!(cell.reverse);
     }
 
+    fn rendered_rows(grid: &TerminalGrid) -> Vec<String> {
+        grid.grid
+            .iter()
+            .map(|row| row.iter().map(|cell| cell.ch).collect())
+            .collect()
+    }
+
     #[test]
     fn erase_in_line_clears_stale_characters_after_shorter_redraw() {
         let mut grid = TerminalGrid::new(1, 8);
@@ -677,6 +787,42 @@ mod tests {
     }
 
     #[test]
+    fn repeated_blank_lines_at_bottom_scroll_full_viewport() {
+        let mut grid = TerminalGrid::new(3, 1);
+        let mut parser = Parser::new();
+
+        parser.advance(&mut grid, b"A\r\nB\r\n\r\n");
+
+        assert_eq!(rendered_rows(&grid), vec!["B", " ", " "]);
+        assert_eq!(grid.cursor_row, 2);
+        assert_eq!(grid.cursor_col, 0);
+    }
+
+    #[test]
+    fn newline_past_last_row_scrolls_up() {
+        let mut grid = TerminalGrid::new(3, 1);
+        let mut parser = Parser::new();
+
+        parser.advance(&mut grid, b"A\r\nB\r\nC\r\nD");
+
+        assert_eq!(rendered_rows(&grid), vec!["B", "C", "D"]);
+        assert_eq!(grid.cursor_row, 2);
+        assert_eq!(grid.cursor_col, 1);
+    }
+
+    #[test]
+    fn scroll_region_preserves_bottom_status_line() {
+        let mut grid = TerminalGrid::new(3, 4);
+        let mut parser = Parser::new();
+
+        parser.advance(&mut grid, b"\x1b[1;2rA\r\nB\x1b[3;1HS\x1b[2;1H\r\nC");
+
+        assert_eq!(rendered_rows(&grid), vec!["B   ", "C   ", "S   "]);
+        assert_eq!(grid.cursor_row, 1);
+        assert_eq!(grid.cursor_col, 1);
+    }
+
+    #[test]
     fn tmux_clear_sequence_clears_visible_grid() {
         let mut grid = TerminalGrid::new(2, 5);
         let mut parser = Parser::new();
@@ -684,12 +830,31 @@ mod tests {
         parser.advance(&mut grid, b"HELLO\r\nWORLD");
         parser.advance(&mut grid, b"\x1b[H\x1b[J\x1b[3J");
 
-        assert!(grid
-            .grid
-            .iter()
-            .flatten()
-            .all(|cell| cell.ch == ' '));
+        assert!(grid.grid.iter().flatten().all(|cell| cell.ch == ' '));
         assert_eq!(grid.cursor_row, 0);
         assert_eq!(grid.cursor_col, 0);
+    }
+
+    #[test]
+    fn clear_sequence_repositions_prompt_at_top() {
+        let mut grid = TerminalGrid::new(3, 5);
+        let mut parser = Parser::new();
+
+        parser.advance(&mut grid, b"A\r\nB\r\nC\x1b[H\x1b[J\x1b[3J>>>");
+
+        assert_eq!(rendered_rows(&grid), vec![">>>  ", "     ", "     "]);
+        assert_eq!(grid.cursor_row, 0);
+        assert_eq!(grid.cursor_col, 3);
+    }
+
+    #[test]
+    fn preferred_terminal_program_uses_existing_shell_env() {
+        assert_eq!(preferred_terminal_program(Some("/bin/sh")), "/bin/sh");
+    }
+
+    #[test]
+    fn preferred_terminal_program_falls_back_when_shell_missing() {
+        assert_eq!(preferred_terminal_program(Some("/definitely/missing/shell")), "/bin/sh");
+        assert_eq!(preferred_terminal_program(None), "/bin/sh");
     }
 }

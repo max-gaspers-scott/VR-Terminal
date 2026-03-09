@@ -1,5 +1,5 @@
 import './App.css';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import TerminalCanvas from './TerminalCanvas';
 import { encodeKeyEvent } from './terminalInput';
 
@@ -13,18 +13,16 @@ function cloneTerminalSnapshot(snapshot) {
 }
 
 function App() {
-  const [apiStatus, setApiStatus] = useState('');
-  const [socketStatus, setSocketStatus] = useState('connecting');
-  const [socketError, setSocketError] = useState('');
   const [terminalSnapshot, setTerminalSnapshot] = useState(null);
   const [terminalFocused, setTerminalFocused] = useState(false);
   const socketRef = useRef(null);
   const terminalShellRef = useRef(null);
+  const terminalCanvasRef = useRef(null);
+  const terminalPlaneRef = useRef(null);
+  const terminalTextureRef = useRef(null);
 
   useEffect(() => {
     if (typeof window.io !== 'function') {
-      setSocketStatus('client-missing');
-      setSocketError('Socket.IO client script is not loaded.');
       return undefined;
     }
 
@@ -32,19 +30,11 @@ function App() {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      setSocketStatus('connected');
-      setSocketError('');
       terminalShellRef.current?.focus();
     });
 
-    socket.on('disconnect', () => {
-      setSocketStatus('disconnected');
-    });
-
-    socket.on('connect_error', (error) => {
-      setSocketStatus('error');
-      setSocketError(error.message);
-    });
+    socket.on('disconnect', () => {});
+    socket.on('connect_error', () => {});
 
     socket.on('terminal-grid', (snapshot) => {
       setTerminalSnapshot(cloneTerminalSnapshot(snapshot));
@@ -55,33 +45,6 @@ function App() {
       socket.close();
     };
   }, []);
-
-  const dimensionsLabel = useMemo(() => {
-    if (!terminalSnapshot) {
-      return 'waiting for grid';
-    }
-
-    return `${terminalSnapshot.cols} × ${terminalSnapshot.rows}`;
-  }, [terminalSnapshot]);
-
-  const checkApiHealth = async () => {
-    try {
-      const response = await fetch(`${API_URL}/health`);
-      if (response.ok) {
-        const data = await response.text();
-        if (data.toLowerCase().includes('healthy')) {
-          setApiStatus('Backend API is healthy!');
-        } else {
-          setApiStatus(`Backend API is unhealthy. Response: ${data}`);
-        }
-      } else {
-        setApiStatus(`Error: Backend API returned status ${response.status}`);
-      }
-    } catch (error) {
-      console.error('Error checking API health:', error);
-      setApiStatus('Error: Could not connect to the backend API.');
-    }
-  };
 
   const emitTerminalInput = useCallback((encoded) => {
     if (socketRef.current?.connected) {
@@ -118,41 +81,112 @@ function App() {
     };
   }, [handleTerminalKeyDown, terminalFocused]);
 
+  useEffect(() => {
+    const plane = terminalPlaneRef.current;
+    const canvas = terminalCanvasRef.current;
+    const { THREE } = window;
+
+    if (!plane || !canvas || !THREE) {
+      return undefined;
+    }
+
+    let disposed = false;
+
+    const applyCanvasTexture = () => {
+      if (disposed || terminalTextureRef.current) {
+        return;
+      }
+
+      const mesh = plane.getObject3D?.('mesh') || plane.object3D?.children?.[0];
+      if (!mesh) {
+        return;
+      }
+
+      const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+      if (!material) {
+        return;
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      terminalTextureRef.current = texture;
+      material.map = texture;
+      material.color = new THREE.Color('#ffffff');
+      material.needsUpdate = true;
+    };
+
+    applyCanvasTexture();
+    plane.addEventListener('loaded', applyCanvasTexture);
+
+    return () => {
+      disposed = true;
+      plane.removeEventListener('loaded', applyCanvasTexture);
+
+      if (terminalTextureRef.current) {
+        terminalTextureRef.current.dispose();
+        terminalTextureRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (terminalTextureRef.current) {
+        terminalTextureRef.current.needsUpdate = true;
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [terminalSnapshot]);
+
   return (
     <div className="App">
-      <div className="App-shell">
-        <div className="App-toolbar">
-          <div>
-            <h1>Terminal Viewer</h1>
-            <p>Live canvas rendering for the streamed terminal grid.</p>
-          </div>
-          <div className="App-actions">
-            <button onClick={checkApiHealth} className="App-button">
-              Check API Health
-            </button>
-            <span className={`status-pill status-${socketStatus}`}>
-              Socket: {socketStatus}
-            </span>
-            <span className="status-pill">Grid: {dimensionsLabel}</span>
-          </div>
+      <div
+        ref={terminalShellRef}
+        data-testid="vr-shell"
+        className={`vr-shell ${terminalFocused ? 'vr-shell-focused' : ''}`}
+        tabIndex={0}
+        onFocus={() => setTerminalFocused(true)}
+        onBlur={() => setTerminalFocused(false)}
+        onMouseDown={() => terminalShellRef.current?.focus()}
+      >
+        <div className="terminal-texture-source" aria-hidden="true">
+          <TerminalCanvas
+            ref={terminalCanvasRef}
+            snapshot={terminalSnapshot}
+            showPlaceholder={false}
+            canvasId="terminal-canvas-texture"
+            className="terminal-texture-canvas"
+          />
         </div>
 
-        {apiStatus && <p className="info-banner">{apiStatus}</p>}
-        {socketError && <p className="info-banner info-banner-error">{socketError}</p>}
-        <p className="terminal-hint">
-          {terminalFocused ? 'Terminal focused — keyboard input goes to the PTY.' : 'Click the terminal to focus it, then type to send input to the PTY.'}
-        </p>
-
-        <div
-          ref={terminalShellRef}
-          className={`terminal-shell ${terminalFocused ? 'terminal-shell-focused' : ''}`}
-          tabIndex={0}
-          onFocus={() => setTerminalFocused(true)}
-          onBlur={() => setTerminalFocused(false)}
-          onMouseDown={() => terminalShellRef.current?.focus()}
+        <a-scene
+          embedded
+          data-testid="vr-scene"
+          className="vr-scene"
+          renderer="colorManagement: true; antialias: true"
+          vr-mode-ui="enabled: false"
         >
-          <TerminalCanvas snapshot={terminalSnapshot} />
-        </div>
+          <a-entity position="0 1.6 0">
+            <a-camera wasd-controls-enabled="false"></a-camera>
+          </a-entity>
+          <a-entity light="type: ambient; intensity: 0.85; color: #c8d7ff"></a-entity>
+          <a-entity light="type: directional; intensity: 0.65; color: #ffffff" position="-1 3 2"></a-entity>
+          <a-plane position="0 0 -4" rotation="-90 0 0" width="30" height="30" color="#11161d"></a-plane>
+          <a-sky color="#05070a"></a-sky>
+          <a-box position="0 1.6 -2.8" width="4.05" height="1.85" depth="0.08" color="#141b24"></a-box>
+          <a-plane
+            ref={terminalPlaneRef}
+            data-testid="terminal-plane"
+            position="0 1.6 -2.75"
+            width="3.8"
+            height="1.55"
+            color="#000000"
+            material="shader: flat"
+          ></a-plane>
+        </a-scene>
       </div>
     </div>
   );

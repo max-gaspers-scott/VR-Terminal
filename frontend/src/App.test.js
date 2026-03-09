@@ -48,11 +48,12 @@ afterEach(() => {
 });
 
 test('renders the terminal viewer shell', () => {
-  render(<App />);
+  const { container } = render(<App />);
 
-  expect(screen.getByText(/terminal viewer/i)).toBeInTheDocument();
-  expect(screen.getByText(/waiting for terminal stream/i)).toBeInTheDocument();
-  expect(screen.getByText(/click the terminal to focus it/i)).toBeInTheDocument();
+  expect(screen.getByTestId('vr-shell')).toBeInTheDocument();
+  expect(screen.getByTestId('vr-scene')).toBeInTheDocument();
+  expect(container.querySelector('[data-testid="terminal-plane"]')).not.toBeNull();
+  expect(screen.queryByText(/terminal viewer/i)).not.toBeInTheDocument();
 });
 
 test('captures ctrl slash from document while terminal is focused', () => {
@@ -70,7 +71,7 @@ test('captures ctrl slash from document while terminal is focused', () => {
   window.io = jest.fn(() => socket);
 
   const { container } = render(<App />);
-  const shell = container.querySelector('.terminal-shell');
+  const shell = container.querySelector('.vr-shell');
 
   expect(window.io).toHaveBeenCalled();
   expect(shell).not.toBeNull();
@@ -100,6 +101,8 @@ test('clones incoming terminal snapshots so mutated socket payloads still repain
 
   render(<App />);
 
+  jest.clearAllMocks();
+
   act(() => {
     socketHandlers['terminal-grid'](snapshot);
   });
@@ -114,7 +117,11 @@ test('clones incoming terminal snapshots so mutated socket payloads still repain
   });
 
   expect(mockContext.fillRect).toHaveBeenCalled();
-  expect(mockContext.fillText).not.toHaveBeenCalled();
+  expect(mockContext.fillText).toHaveBeenCalledWith(
+    'Terminal connected. Waiting for output…',
+    expect.any(Number),
+    expect.any(Number),
+  );
 
   window.io = originalIo;
 });
