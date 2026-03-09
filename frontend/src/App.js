@@ -3,7 +3,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import TerminalCanvas from './TerminalCanvas';
 import { encodeKeyEvent } from './terminalInput';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8081';
+export function getApiUrl(location = typeof window !== 'undefined' ? window.location : undefined) {
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+
+  if (location?.origin && location.origin !== 'null') {
+    return location.origin;
+  }
+
+  return 'http://localhost:8081';
+}
 
 function cloneTerminalSnapshot(snapshot) {
   return {
@@ -26,7 +36,7 @@ function App() {
       return undefined;
     }
 
-    const socket = window.io(API_URL, { path: '/socket.io' });
+    const socket = window.io(getApiUrl(), { path: '/socket.io' });
     socketRef.current = socket;
 
     socket.on('connect', () => {
