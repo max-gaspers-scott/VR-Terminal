@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+</head>
+<body>
+  <canvas id="myCanvas" width="512" height="512" style="display:none"></canvas>
+
+  <a-scene>
+    <a-box id="cube" position="0 1.5 -4" width="2" height="2" depth="2"></a-box>
+    <a-plane position="0 0 -4" rotation="-90 0 0" width="30" height="30" color="#7BC8A4"></a-plane>
+    <a-sky color="#ECECEC"></a-sky>
+  </a-scene>
+
+  <script>
+    const canvas = document.getElementById('myCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Initial draw
+    function drawCircle(time) {
+      // Background
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, 512, 512);
+
+      // Animated circle
+      const centerX = 256;
+      const centerY = 256;
+      const radius = 100 + Math.sin(time * 0.002) * 30;
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#e94560';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 5;
+      ctx.stroke();
+
+      // Smaller decorative circles
+      for (let i = 0; i < 4; i++) {
+        const angle = (time * 0.001) + (i * Math.PI / 2);
+        const x = centerX + Math.cos(angle) * 180;
+        const y = centerY + Math.sin(angle) * 180;
+        ctx.beginPath();
+        ctx.arc(x, y, 20, 0, Math.PI * 2);
+        ctx.fillStyle = '#4ecca3';
+        ctx.fill();
+      }
+    }
+
+    // Apply canvas as texture to A-Frame cube
+    const box = document.getElementById('cube');
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    // Wait for box to be initialized
+    box.addEventListener('loaded', () => {
+      const mesh = box.object3D.children[0];
+      mesh.material.map = texture;
+      mesh.material.needsUpdate = true;
+    });
+
+    // Animation loop
+    function animate(time) {
+      drawCircle(time);
+      texture.needsUpdate = true;
+      requestAnimationFrame(animate);
+    }
+    animate();
+  </script>
+</body>
+</html>

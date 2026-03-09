@@ -1,0 +1,44 @@
+.App {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #05070a;
+}
+
+.vr-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.vr-shell-focused {
+  box-shadow: inset 0 0 0 2px rgba(110, 214, 255, 0.2);
+}
+
+.vr-scene {
+  width: 100%;
+  height: 100%;
+}
+
+.terminal-texture-source {
+  position: fixed;
+  left: -10000px;
+  top: -10000px;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.terminal-texture-canvas,
+.terminal-canvas {
+  display: block;
+}
+
+.terminal-placeholder {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  color: #8ea3b8;
+}
