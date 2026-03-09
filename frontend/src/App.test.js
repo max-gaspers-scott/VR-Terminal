@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import App from './App';
+import App, { getApiUrl } from './App';
 
 function createSnapshot(ch = ' ') {
   return {
@@ -54,6 +54,10 @@ test('renders the terminal viewer shell', () => {
   expect(screen.getByTestId('vr-scene')).toBeInTheDocument();
   expect(container.querySelector('[data-testid="terminal-plane"]')).not.toBeNull();
   expect(screen.queryByText(/terminal viewer/i)).not.toBeInTheDocument();
+});
+
+test('uses the current page origin for the backend when no API env override is set', () => {
+  expect(getApiUrl({ origin: 'http://192.168.1.42:8081' })).toBe('http://192.168.1.42:8081');
 });
 
 test('captures ctrl slash from document while terminal is focused', () => {
