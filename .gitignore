@@ -99,3 +99,7 @@ Thumbs.db
 # Build files
 build/
 dist/
+
+# Rust / local build artifacts
+/target/
+/debug/
