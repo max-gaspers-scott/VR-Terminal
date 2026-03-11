@@ -50,11 +50,15 @@ afterEach(() => {
 test('renders the terminal viewer shell', () => {
   const { container } = render(<App />);
   const scene = screen.getByTestId('vr-scene');
+  const terminalPlane = container.querySelector('[data-testid="terminal-plane"]');
 
   expect(screen.getByTestId('vr-shell')).toBeInTheDocument();
   expect(scene).toBeInTheDocument();
-  expect(scene).not.toHaveAttribute('vr-mode-ui', 'enabled: false');
-  expect(container.querySelector('[data-testid="terminal-plane"]')).not.toBeNull();
+  expect(scene).toHaveAttribute('vr-mode-ui', 'enabled: true; cardboardModeEnabled: true');
+  expect(terminalPlane).not.toBeNull();
+  expect(terminalPlane).toHaveAttribute('position', '0 1.9 -2.75');
+  expect(terminalPlane).toHaveAttribute('width', '7.6');
+  expect(terminalPlane).toHaveAttribute('height', '3.1');
   expect(screen.queryByText(/terminal viewer/i)).not.toBeInTheDocument();
 });
 
