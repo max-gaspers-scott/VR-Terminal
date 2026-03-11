@@ -60,6 +60,28 @@ test('uses the current page origin for the backend when no API env override is s
   expect(getApiUrl({ origin: 'http://192.168.1.42:8081' })).toBe('http://192.168.1.42:8081');
 });
 
+test('maps the CRA development server port to the backend port', () => {
+  expect(getApiUrl({
+    origin: 'http://localhost:3000',
+    protocol: 'http:',
+    hostname: 'localhost',
+    port: '3000',
+  })).toBe('http://localhost:8081');
+});
+
+test('prefers an explicit API override when provided', () => {
+  const originalApiUrl = process.env.REACT_APP_API_URL;
+  process.env.REACT_APP_API_URL = 'https://api.example.com';
+
+  expect(getApiUrl({ origin: 'http://localhost:3000' })).toBe('https://api.example.com');
+
+  if (originalApiUrl === undefined) {
+    delete process.env.REACT_APP_API_URL;
+  } else {
+    process.env.REACT_APP_API_URL = originalApiUrl;
+  }
+});
+
 test('captures ctrl slash from document while terminal is focused', () => {
   const originalIo = window.io;
   const socketHandlers = {};

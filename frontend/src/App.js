@@ -4,11 +4,17 @@ import TerminalCanvas from './TerminalCanvas';
 import { encodeKeyEvent } from './terminalInput';
 
 export function getApiUrl(location = typeof window !== 'undefined' ? window.location : undefined) {
-  if (process.env.REACT_APP_API_URL) {
-    return process.env.REACT_APP_API_URL;
+  const configuredApiUrl = process.env.REACT_APP_API_URL?.trim();
+
+  if (configuredApiUrl) {
+    return configuredApiUrl;
   }
 
   if (location?.origin && location.origin !== 'null') {
+    if (location.protocol && location.hostname && location.port === '3000') {
+      return `${location.protocol}//${location.hostname}:8081`;
+    }
+
     return location.origin;
   }
 

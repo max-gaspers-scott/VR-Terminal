@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 # 1. Builder image: compile the binary in release mode
 # -----------------------------------------------------------------------------
-FROM rustlang/rust:nightly-slim AS builder
+FROM rustlang/rust:nightly-bookworm-slim AS builder
 
 # Install build dependencies that some crates (e.g. sqlx / openssl) may need
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -34,7 +34,7 @@ FROM node:18-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm install
+RUN npm ci
 
 COPY frontend/ ./
 RUN npm run build
@@ -46,20 +46,19 @@ RUN npm run build
 FROM debian:bookworm-slim AS runtime
 
 # Install certificates (TLS) & clean apt caches
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl libssl3 && rm -rf /var/lib/apt/lists/*
 
 # Create an unprivileged user to run the app
 RUN useradd -m -u 10001 appuser
 
 WORKDIR /app
 
-# Copy compiled binary & any runtime assets (e.g. migrations)
-COPY --from=builder /app/target/release/VR-Terminal ./
-COPY --from=builder /app/migrations ./migrations
+# Copy compiled binary & frontend build output
+COPY --from=builder /app/target/release/test2 ./vr-terminal
 COPY --from=frontend-builder /app/frontend/build ./frontend/build
 
 # Ensure the binary is executable
-RUN chown -R appuser:appuser /app && chmod +x /app/VR-Terminal
+RUN chown -R appuser:appuser /app && chmod +x /app/vr-terminal
 
 USER appuser
 
@@ -67,5 +66,5 @@ USER appuser
 EXPOSE 8081
 
 # Start the server
-CMD ["/app/VR-Terminal"]
+CMD ["/app/vr-terminal"]
 
