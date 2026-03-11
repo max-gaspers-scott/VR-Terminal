@@ -51,15 +51,28 @@ test('renders the terminal viewer shell', () => {
   const { container } = render(<App />);
   const scene = screen.getByTestId('vr-scene');
   const terminalPlane = container.querySelector('[data-testid="terminal-plane"]');
+  const enterVrButton = screen.getByRole('button', { name: /enter vr/i });
 
   expect(screen.getByTestId('vr-shell')).toBeInTheDocument();
   expect(scene).toBeInTheDocument();
   expect(scene).toHaveAttribute('vr-mode-ui', 'enabled: true; cardboardModeEnabled: true');
+  expect(enterVrButton).toBeInTheDocument();
   expect(terminalPlane).not.toBeNull();
   expect(terminalPlane).toHaveAttribute('position', '0 1.9 -2.75');
   expect(terminalPlane).toHaveAttribute('width', '7.6');
   expect(terminalPlane).toHaveAttribute('height', '3.1');
   expect(screen.queryByText(/terminal viewer/i)).not.toBeInTheDocument();
+});
+
+test('uses the fallback Enter VR button to call scene.enterVR', () => {
+  render(<App />);
+
+  const scene = screen.getByTestId('vr-scene');
+  scene.enterVR = jest.fn(() => Promise.resolve());
+
+  fireEvent.click(screen.getByRole('button', { name: /enter vr/i }));
+
+  expect(scene.enterVR).toHaveBeenCalledTimes(1);
 });
 
 test('uses the current page origin for the backend when no API env override is set', () => {

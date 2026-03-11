@@ -21,6 +21,30 @@
   height: 100%;
 }
 
+.vr-enter-button {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10001;
+  min-width: 120px;
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.vr-enter-button:hover,
+.vr-enter-button:focus-visible {
+  background: #ef2d5e;
+  outline: none;
+}
+
 .terminal-texture-source {
   position: fixed;
   left: -10000px;

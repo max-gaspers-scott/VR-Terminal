@@ -31,6 +31,8 @@ function cloneTerminalSnapshot(snapshot) {
 function App() {
   const [terminalSnapshot, setTerminalSnapshot] = useState(null);
   const [terminalFocused, setTerminalFocused] = useState(false);
+  const [isVrActive, setIsVrActive] = useState(false);
+  const sceneRef = useRef(null);
   const socketRef = useRef(null);
   const terminalShellRef = useRef(null);
   const terminalCanvasRef = useRef(null);
@@ -96,6 +98,61 @@ function App() {
       document.removeEventListener('keydown', handleDocumentKeyDown, true);
     };
   }, [handleTerminalKeyDown, terminalFocused]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+
+    if (!scene) {
+      return undefined;
+    }
+
+    const applyVrModeUi = () => {
+      scene.setAttribute('vr-mode-ui', 'enabled: true; cardboardModeEnabled: true');
+    };
+
+    applyVrModeUi();
+    scene.addEventListener('loaded', applyVrModeUi);
+
+    return () => {
+      scene.removeEventListener('loaded', applyVrModeUi);
+    };
+  }, []);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+
+    if (!scene) {
+      return undefined;
+    }
+
+    const handleEnterVrState = () => setIsVrActive(true);
+    const handleExitVrState = () => setIsVrActive(false);
+
+    scene.addEventListener('enter-vr', handleEnterVrState);
+    scene.addEventListener('exit-vr', handleExitVrState);
+
+    return () => {
+      scene.removeEventListener('enter-vr', handleEnterVrState);
+      scene.removeEventListener('exit-vr', handleExitVrState);
+    };
+  }, []);
+
+  const handleEnterVr = useCallback(() => {
+    const scene = sceneRef.current;
+
+    if (!scene?.enterVR) {
+      return;
+    }
+
+    try {
+      const result = scene.enterVR();
+      if (typeof result?.catch === 'function') {
+        result.catch(() => {});
+      }
+    } catch (error) {
+      // Ignore here; the important part is exposing a direct user-gesture entry path.
+    }
+  }, []);
 
   useEffect(() => {
     const plane = terminalPlaneRef.current;
@@ -178,12 +235,22 @@ function App() {
           />
         </div>
 
+        {!isVrActive && (
+          <button
+            type="button"
+            className="vr-enter-button"
+            onClick={handleEnterVr}
+          >
+            Enter VR
+          </button>
+        )}
+
         <a-scene
+          ref={sceneRef}
           embedded
           data-testid="vr-scene"
           className="vr-scene"
           renderer="colorManagement: true; antialias: true"
-          vr-mode-ui="enabled: true; cardboardModeEnabled: true"
         >
           <a-entity position="0 1.6 0">
             <a-camera wasd-controls-enabled="false"></a-camera>
