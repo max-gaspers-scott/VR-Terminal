@@ -183,7 +183,6 @@ function App() {
           data-testid="vr-scene"
           className="vr-scene"
           renderer="colorManagement: true; antialias: true"
-          vr-mode-ui="enabled: false"
         >
           <a-entity position="0 1.6 0">
             <a-camera wasd-controls-enabled="false"></a-camera>

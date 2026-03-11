@@ -49,9 +49,11 @@ afterEach(() => {
 
 test('renders the terminal viewer shell', () => {
   const { container } = render(<App />);
+  const scene = screen.getByTestId('vr-scene');
 
   expect(screen.getByTestId('vr-shell')).toBeInTheDocument();
-  expect(screen.getByTestId('vr-scene')).toBeInTheDocument();
+  expect(scene).toBeInTheDocument();
+  expect(scene).not.toHaveAttribute('vr-mode-ui', 'enabled: false');
   expect(container.querySelector('[data-testid="terminal-plane"]')).not.toBeNull();
   expect(screen.queryByText(/terminal viewer/i)).not.toBeInTheDocument();
 });
