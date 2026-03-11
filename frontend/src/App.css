@@ -1,6 +1,7 @@
 .App {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: #05070a;
 }
@@ -22,9 +23,9 @@
 }
 
 .vr-enter-button {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
+  position: fixed;
+  right: calc(env(safe-area-inset-right, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
   z-index: 10001;
   min-width: 120px;
   min-height: 48px;
@@ -43,6 +44,13 @@
 .vr-enter-button:focus-visible {
   background: #ef2d5e;
   outline: none;
+}
+
+@media (pointer: coarse) {
+  .vr-enter-button {
+    top: calc(env(safe-area-inset-top, 0px) + 16px);
+    bottom: auto;
+  }
 }
 
 .terminal-texture-source {

@@ -235,16 +235,6 @@ function App() {
           />
         </div>
 
-        {!isVrActive && (
-          <button
-            type="button"
-            className="vr-enter-button"
-            onClick={handleEnterVr}
-          >
-            Enter VR
-          </button>
-        )}
-
         <a-scene
           ref={sceneRef}
           embedded
@@ -270,6 +260,16 @@ function App() {
             material="shader: flat"
           ></a-plane>
         </a-scene>
+
+        {!isVrActive && (
+          <button
+            type="button"
+            className="vr-enter-button"
+            onClick={handleEnterVr}
+          >
+            Enter VR
+          </button>
+        )}
       </div>
     </div>
   );
