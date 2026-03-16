@@ -1,0 +1,5 @@
+
+mkdir -p certs
+openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=*"0
+cargo build --release
+TLS_ENABLED=true TLS_CERT_PATH=certs/cert.pem TLS_KEY_PATH=certs/key.pem cargo run --release
