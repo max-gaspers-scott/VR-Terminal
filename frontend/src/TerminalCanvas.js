@@ -1,8 +1,8 @@
 import { forwardRef, useCallback, useLayoutEffect, useRef } from 'react';
 
-const CELL_WIDTH = 11;
-const CELL_HEIGHT = 20;
-const FONT_SIZE = 15;
+const CELL_WIDTH = 22;
+const CELL_HEIGHT = 40;
+const FONT_SIZE = 35;
 const FONT_FAMILY = '"DejaVu Sans Mono", "Noto Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 40;

@@ -147,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(cors)
         .layer(layer);
 
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", 3216)).await?;
 
     axum::serve(listener, app).await?;
     Ok(())

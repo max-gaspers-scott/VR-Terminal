@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import TerminalCanvas from './TerminalCanvas';
 import { encodeKeyEvent } from './terminalInput';
 
+const TERMINAL_VR_SCALE = '2 2 1';
+
 export function getApiUrl(location = typeof window !== 'undefined' ? window.location : undefined) {
   const configuredApiUrl = process.env.REACT_APP_API_URL?.trim();
 
@@ -249,13 +251,21 @@ function App() {
           <a-entity light="type: directional; intensity: 0.65; color: #ffffff" position="-1 3 2"></a-entity>
           <a-plane position="0 0 -4" rotation="-90 0 0" width="30" height="30" color="#11161d"></a-plane>
           <a-sky color="#05070a"></a-sky>
-          <a-box position="0 1.9 -2.8" width="8.1" height="3.7" depth="0.08" color="#141b24"></a-box>
+          <a-box
+            position="0 1.9 -2.8"
+            width="8.1"
+            height="3.7"
+            depth="0.08"
+            scale={TERMINAL_VR_SCALE}
+            color="#141b24"
+          ></a-box>
           <a-plane
             ref={terminalPlaneRef}
             data-testid="terminal-plane"
-            position="0 1.9 -2.75"
+            position="0 2.9 -2.75"
             width="7.6"
             height="3.1"
+            scale={TERMINAL_VR_SCALE}
             color="#000000"
             material="shader: flat"
           ></a-plane>
