@@ -103,3 +103,6 @@ dist/
 # Rust / local build artifacts
 /target/
 /debug/
+
+# Certificates (sensitive)
+certs/
