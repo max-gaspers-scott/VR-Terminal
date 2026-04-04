@@ -255,9 +255,8 @@ function App() {
             ref={terminalPlaneRef}
             data-testid="terminal-plane"
             position="0 5 -5.5"
-            width="7.6"
-            height="4.6"
-            scale={TERMINAL_VR_SCALE}
+            width="12.1"
+            height="8"
             color="#000000"
             material="shader: flat"
           ></a-plane>

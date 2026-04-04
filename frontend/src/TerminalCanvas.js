@@ -421,7 +421,7 @@ const TerminalCanvas = forwardRef(function TerminalCanvas(
 
     const width = (snapshot?.cols ?? DEFAULT_COLS) * CELL_WIDTH;
     const height = (snapshot?.rows ?? DEFAULT_ROWS) * CELL_HEIGHT;
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = 1;
 
     sizeCanvas(canvas, width, height, ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
