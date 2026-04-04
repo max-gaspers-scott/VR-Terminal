@@ -58,9 +58,9 @@ test('renders the terminal viewer shell', () => {
   expect(scene).toHaveAttribute('vr-mode-ui', 'enabled: true; cardboardModeEnabled: true');
   expect(enterVrButton).toBeInTheDocument();
   expect(terminalPlane).not.toBeNull();
-  expect(terminalPlane).toHaveAttribute('position', '0 2.9 -2.75');
+  expect(terminalPlane).toHaveAttribute('position', '0 5 -5.5');
   expect(terminalPlane).toHaveAttribute('width', '7.6');
-  expect(terminalPlane).toHaveAttribute('height', '3.1');
+  expect(terminalPlane).toHaveAttribute('height', '4.6');
   expect(terminalPlane).toHaveAttribute('scale', '2 2 1');
   expect(screen.queryByText(/terminal viewer/i)).not.toBeInTheDocument();
 });
