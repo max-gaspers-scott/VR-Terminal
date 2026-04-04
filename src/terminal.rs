@@ -7,7 +7,7 @@ use tokio::sync::watch;
 use vte::{Params, Parser, Perform};
 
 pub const DEFAULT_ROWS: usize = 40;
-pub const DEFAULT_COLS: usize = 120;
+pub const DEFAULT_COLS: usize = 110;
 const DEFAULT_FG: [u8; 3] = [255, 255, 255];
 const DEFAULT_BG: [u8; 3] = [0, 0, 0];
 
@@ -542,8 +542,8 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiv
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
-            rows: 40,
-            cols: 120,
+            rows: DEFAULT_ROWS as u16,
+            cols: DEFAULT_COLS as u16,
             pixel_width: 0,
             pixel_height: 0,
         })
