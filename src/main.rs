@@ -151,13 +151,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if TLS is enabled via environment variables
     let tls_enabled = env::var("TLS_ENABLED").unwrap_or_default() == "true";
-    
+
     if tls_enabled {
         let cert_path = env::var("TLS_CERT_PATH").unwrap_or_else(|_| "certs/cert.pem".to_string());
         let key_path = env::var("TLS_KEY_PATH").unwrap_or_else(|_| "certs/key.pem".to_string());
-        
+
         let rustls_config = RustlsConfig::from_pem_file(cert_path, key_path).await?;
-        
+
         println!("Starting HTTPS server on 0.0.0.0:{}...", port);
         let addr = SocketAddr::from(([0, 0, 0, 0], port));
         axum_server::bind_rustls(addr, rustls_config)
@@ -168,6 +168,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Starting HTTP server on 0.0.0.0:{}...", port);
         axum::serve(listener, app).await?;
     }
-    
+
     Ok(())
 }

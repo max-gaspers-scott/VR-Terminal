@@ -4,7 +4,7 @@ const CELL_WIDTH = 22;
 const CELL_HEIGHT = 40;
 const FONT_SIZE = 35;
 const FONT_FAMILY = '"DejaVu Sans Mono", "Noto Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-const DEFAULT_COLS = 110;
+const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 40;
 
 const toRgb = ([r, g, b]) => `rgb(${r}, ${g}, ${b})`;

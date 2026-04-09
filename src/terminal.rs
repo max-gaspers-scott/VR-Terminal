@@ -854,7 +854,10 @@ mod tests {
 
     #[test]
     fn preferred_terminal_program_falls_back_when_shell_missing() {
-        assert_eq!(preferred_terminal_program(Some("/definitely/missing/shell")), "/bin/sh");
+        assert_eq!(
+            preferred_terminal_program(Some("/definitely/missing/shell")),
+            "/bin/sh"
+        );
         assert_eq!(preferred_terminal_program(None), "/bin/sh");
     }
 }
