@@ -7,14 +7,17 @@ function createSnapshot(ch = ' ') {
     cols: 1,
     cursor_row: 0,
     cursor_col: 0,
-    grid: [[{
-      ch,
-      fg: [255, 255, 255],
-      bg: [0, 0, 0],
-      bold: false,
-      underline: false,
-      reverse: false,
-    }]],
+    grid: [{
+      revision: 1,
+      cells: [{
+        ch,
+        fg: [255, 255, 255],
+        bg: [0, 0, 0],
+        bold: false,
+        underline: false,
+        reverse: false,
+      }],
+    }],
   };
 }
 
@@ -80,7 +83,8 @@ test('repaints when the same snapshot object is mutated between renders', () => 
   expect(mockContext.fillText).toHaveBeenCalledWith('A', expect.any(Number), expect.any(Number));
 
   jest.clearAllMocks();
-  snapshot.grid[0][0].ch = ' ';
+  snapshot.grid[0].cells[0].ch = ' ';
+  snapshot.grid[0].revision += 1;
   rerender(<TerminalCanvas snapshot={snapshot} />);
 
   expect(mockContext.fillRect).toHaveBeenCalled();

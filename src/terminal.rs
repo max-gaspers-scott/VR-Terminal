@@ -11,7 +11,7 @@ pub const DEFAULT_COLS: usize = 110;
 const DEFAULT_FG: [u8; 3] = [255, 255, 255];
 const DEFAULT_BG: [u8; 3] = [0, 0, 0];
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct Cell {
     ch: char,
     fg: [u8; 3],
@@ -22,26 +22,38 @@ struct Cell {
 }
 
 #[derive(Clone, Serialize)]
-struct SnapshotCell {
-    ch: char,
-    fg: [u8; 3],
-    bg: [u8; 3],
-    bold: bool,
-    underline: bool,
-    reverse: bool,
+pub struct SnapshotCell {
+    pub ch: char,
+    pub fg: [u8; 3],
+    pub bg: [u8; 3],
+    pub bold: bool,
+    pub underline: bool,
+    pub reverse: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub struct SnapshotRow {
+    pub revision: u64,
+    pub cells: Vec<SnapshotCell>,
 }
 
 #[derive(Clone, Serialize)]
 pub struct TerminalSnapshot {
-    rows: usize,
-    cols: usize,
-    cursor_row: usize,
-    cursor_col: usize,
-    grid: Vec<Vec<SnapshotCell>>,
+    pub rows: usize,
+    pub cols: usize,
+    pub cursor_row: usize,
+    pub cursor_col: usize,
+    pub grid: Vec<SnapshotRow>,
+}
+
+#[derive(Clone)]
+struct Row {
+    cells: Vec<Cell>,
+    revision: u64,
 }
 
 struct TerminalGrid {
-    grid: Vec<Vec<Cell>>,
+    grid: Vec<Row>,
     cursor_row: usize,
     cursor_col: usize,
     scroll_region_top: usize,
@@ -59,7 +71,12 @@ impl TerminalGrid {
     fn new(rows: usize, cols: usize) -> Self {
         let blank = Self::blank_cell();
         Self {
-            grid: vec![vec![blank; cols]; rows],
+            grid: (0..rows)
+                .map(|_| Row {
+                    cells: vec![blank.clone(); cols],
+                    revision: 0,
+                })
+                .collect(),
             cursor_row: 0,
             cursor_col: 0,
             scroll_region_top: 0,
@@ -96,8 +113,11 @@ impl TerminalGrid {
         }
     }
 
-    fn blank_row(&self) -> Vec<Cell> {
-        vec![self.styled_blank_cell(); self.cols]
+    fn blank_row(&self) -> Row {
+        Row {
+            cells: vec![self.styled_blank_cell(); self.cols],
+            revision: 0, // Will be updated when assigned
+        }
     }
 
     fn first_param(params: &Params, default: u16) -> u16 {
@@ -133,36 +153,90 @@ impl TerminalGrid {
         self.set_cursor(0, 0);
     }
 
-    fn scroll_up_region(&mut self, top: usize, bottom: usize) {
-        if top >= self.rows || bottom >= self.rows || top > bottom {
+    fn scroll_up_region(&mut self, top: usize, bottom: usize, amount: usize) {
+        if top >= self.rows || bottom >= self.rows || top > bottom || amount == 0 {
             return;
         }
 
-        if top == bottom {
-            self.grid[bottom] = self.blank_row();
+        let region_height = bottom - top + 1;
+        let amount = amount.min(region_height);
+
+        if amount == region_height {
+            let mut blank = self.blank_row();
+            for row in &mut self.grid[top..=bottom] {
+                blank.revision = row.revision + 1;
+                *row = blank.clone();
+            }
             return;
         }
 
-        self.grid[top..=bottom].rotate_left(1);
-        self.grid[bottom] = self.blank_row();
+        self.grid[top..=bottom].rotate_left(amount);
+        for i in 0..amount {
+            let row_idx = bottom - i;
+            let mut blank = self.blank_row();
+            blank.revision = self.grid[row_idx].revision + 1;
+            self.grid[row_idx] = blank;
+        }
+        // Rotate left means lines from bottom+1.. moved into the region if we didn't cap it,
+        // but here we are rotating within the range. All lines in the range have moved.
+        for row in &mut self.grid[top..=bottom] {
+            row.revision += 1;
+        }
+    }
+
+    fn scroll_down_region(&mut self, top: usize, bottom: usize, amount: usize) {
+        if top >= self.rows || bottom >= self.rows || top > bottom || amount == 0 {
+            return;
+        }
+
+        let region_height = bottom - top + 1;
+        let amount = amount.min(region_height);
+
+        if amount == region_height {
+            let mut blank = self.blank_row();
+            for row in &mut self.grid[top..=bottom] {
+                blank.revision = row.revision + 1;
+                *row = blank.clone();
+            }
+            return;
+        }
+
+        self.grid[top..=bottom].rotate_right(amount);
+        for i in 0..amount {
+            let row_idx = top + i;
+            let mut blank = self.blank_row();
+            blank.revision = self.grid[row_idx].revision + 1;
+            self.grid[row_idx] = blank;
+        }
+        for row in &mut self.grid[top..=bottom] {
+            row.revision += 1;
+        }
     }
 
     fn linefeed(&mut self) {
         if self.cursor_row == self.scroll_region_bottom {
-            self.scroll_up_region(self.scroll_region_top, self.scroll_region_bottom);
+            self.scroll_up_region(self.scroll_region_top, self.scroll_region_bottom, 1);
         } else if self.cursor_row < self.rows.saturating_sub(1) {
             self.cursor_row += 1;
         }
     }
 
-    fn clear_row_range(&mut self, row: usize, start: usize, end: usize) {
-        if row >= self.rows || start >= end {
+    fn clear_row_range(&mut self, row_idx: usize, start: usize, end: usize) {
+        if row_idx >= self.rows || start >= end {
             return;
         }
 
         let blank = self.styled_blank_cell();
-        for cell in self.grid[row][start.min(self.cols)..end.min(self.cols)].iter_mut() {
-            *cell = blank.clone();
+        let row = &mut self.grid[row_idx];
+        let mut changed = false;
+        for cell in row.cells[start.min(self.cols)..end.min(self.cols)].iter_mut() {
+            if *cell != blank {
+                *cell = blank.clone();
+                changed = true;
+            }
+        }
+        if changed {
+            row.revision += 1;
         }
     }
 
@@ -171,10 +245,17 @@ impl TerminalGrid {
             return;
         }
 
-        let blank = self.styled_blank_cell();
+        let blank_cell = self.styled_blank_cell();
         for row in self.grid[start_row.min(self.rows)..end_row.min(self.rows)].iter_mut() {
-            for cell in row.iter_mut() {
-                *cell = blank.clone();
+            let mut changed = false;
+            for cell in row.cells.iter_mut() {
+                if *cell != blank_cell {
+                    *cell = blank_cell.clone();
+                    changed = true;
+                }
+            }
+            if changed {
+                row.revision += 1;
             }
         }
     }
@@ -201,6 +282,65 @@ impl TerminalGrid {
             2 => self.clear_row_range(self.cursor_row, 0, self.cols),
             _ => {}
         }
+    }
+
+    fn insert_line(&mut self, amount: usize) {
+        if self.cursor_row < self.scroll_region_top || self.cursor_row > self.scroll_region_bottom {
+            return;
+        }
+        self.scroll_down_region(self.cursor_row, self.scroll_region_bottom, amount);
+    }
+
+    fn delete_line(&mut self, amount: usize) {
+        if self.cursor_row < self.scroll_region_top || self.cursor_row > self.scroll_region_bottom {
+            return;
+        }
+        self.scroll_up_region(self.cursor_row, self.scroll_region_bottom, amount);
+    }
+
+    fn delete_chars(&mut self, amount: usize) {
+        let row_idx = self.cursor_row;
+        if row_idx >= self.rows {
+            return;
+        }
+        let start = self.cursor_col;
+        if start >= self.cols {
+            return;
+        }
+        let amount = amount.min(self.cols - start);
+        let blank = self.styled_blank_cell();
+        let row = &mut self.grid[row_idx];
+        row.cells[start..].rotate_left(amount);
+        for i in 0..amount {
+            row.cells[self.cols - 1 - i] = blank.clone();
+        }
+        row.revision += 1;
+    }
+
+    fn insert_chars(&mut self, amount: usize) {
+        let row_idx = self.cursor_row;
+        if row_idx >= self.rows {
+            return;
+        }
+        let start = self.cursor_col;
+        if start >= self.cols {
+            return;
+        }
+        let amount = amount.min(self.cols - start);
+        let blank = self.styled_blank_cell();
+        let row = &mut self.grid[row_idx];
+        row.cells[start..].rotate_right(amount);
+        for i in 0..amount {
+            row.cells[start + i] = blank.clone();
+        }
+        row.revision += 1;
+    }
+
+    fn erase_chars(&mut self, amount: usize) {
+        let row = self.cursor_row;
+        let start = self.cursor_col;
+        let end = (start + amount).min(self.cols);
+        self.clear_row_range(row, start, end);
     }
 
     fn reset_attributes(&mut self) {
@@ -304,8 +444,11 @@ impl TerminalGrid {
             grid: self
                 .grid
                 .iter()
-                .map(|row| {
-                    row.iter()
+                .map(|row| SnapshotRow {
+                    revision: row.revision,
+                    cells: row
+                        .cells
+                        .iter()
                         .map(|cell| SnapshotCell {
                             ch: cell.ch,
                             fg: cell.fg,
@@ -314,7 +457,7 @@ impl TerminalGrid {
                             underline: cell.underline,
                             reverse: cell.reverse,
                         })
-                        .collect()
+                        .collect(),
                 })
                 .collect(),
         }
@@ -393,7 +536,7 @@ impl Perform for TerminalGrid {
     // A printable character — put it in the grid
     fn print(&mut self, c: char) {
         if self.cursor_col < self.cols && self.cursor_row < self.rows {
-            self.grid[self.cursor_row][self.cursor_col] = Cell {
+            let cell = Cell {
                 ch: c,
                 fg: self.current_fg,
                 bg: self.current_bg,
@@ -401,6 +544,10 @@ impl Perform for TerminalGrid {
                 underline: self.current_underline,
                 reverse: self.current_reverse,
             };
+            if self.grid[self.cursor_row].cells[self.cursor_col] != cell {
+                self.grid[self.cursor_row].cells[self.cursor_col] = cell;
+                self.grid[self.cursor_row].revision += 1;
+            }
             self.cursor_col += 1;
         }
     }
@@ -458,6 +605,19 @@ impl Perform for TerminalGrid {
             // Erase display / erase line.
             'J' => self.erase_in_display(Self::first_param(params, 0)),
             'K' => self.erase_in_line(Self::first_param(params, 0)),
+            'L' => self.insert_line(Self::first_param(params, 1) as usize),
+            'M' => self.delete_line(Self::first_param(params, 1) as usize),
+            'P' => self.delete_chars(Self::first_param(params, 1) as usize),
+            '@' => self.insert_chars(Self::first_param(params, 1) as usize),
+            'X' => self.erase_chars(Self::first_param(params, 1) as usize),
+            'S' => {
+                let amount = Self::first_param(params, 1) as usize;
+                self.scroll_up_region(self.scroll_region_top, self.scroll_region_bottom, amount);
+            }
+            'T' => {
+                let amount = Self::first_param(params, 1) as usize;
+                self.scroll_down_region(self.scroll_region_top, self.scroll_region_bottom, amount);
+            }
             'r' => {
                 let top = Self::nth_param(params, 0, 1);
                 let bottom = Self::nth_param(params, 1, self.rows as u16);
@@ -471,6 +631,28 @@ impl Perform for TerminalGrid {
                 if top < bottom && bottom <= self.rows {
                     self.set_scroll_region(top - 1, bottom - 1);
                 }
+            }
+            _ => {}
+        }
+    }
+
+    fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, byte: u8) {
+        match byte {
+            b'M' => {
+                // Reverse Index (RI)
+                if self.cursor_row == self.scroll_region_top {
+                    self.scroll_down_region(self.scroll_region_top, self.scroll_region_bottom, 1);
+                } else {
+                    self.cursor_row = self.cursor_row.saturating_sub(1);
+                }
+            }
+            b'D' => {
+                // Index (IND)
+                self.linefeed();
+            }
+            b'c' => {
+                // Full Reset (RIS)
+                *self = Self::new(self.rows, self.cols);
             }
             _ => {}
         }
@@ -497,6 +679,7 @@ fn print_grid(grid: &TerminalGrid) {
     print!("\x1b[2J\x1b[1;1H");
     for row in &grid.grid {
         let line: String = row
+            .cells
             .iter()
             .map(|cell| cell.ch.to_string())
             .collect::<Vec<String>>()
@@ -665,7 +848,7 @@ mod tests {
         assert_eq!(snapshot.rows, 2);
         assert_eq!(snapshot.cols, 3);
         assert_eq!(snapshot.grid.len(), 2);
-        assert!(snapshot.grid.iter().all(|row| row.len() == 3));
+        assert!(snapshot.grid.iter().all(|row| row.cells.len() == 3));
     }
 
     #[test]
@@ -675,7 +858,7 @@ mod tests {
 
         let snapshot = grid.snapshot();
 
-        assert_eq!(snapshot.grid[0][0].ch, 'A');
+        assert_eq!(snapshot.grid[0].cells[0].ch, 'A');
         assert_eq!(snapshot.cursor_row, 0);
         assert_eq!(snapshot.cursor_col, 1);
     }
@@ -733,7 +916,7 @@ mod tests {
         grid.print('Z');
 
         let snapshot = grid.snapshot();
-        let cell = &snapshot.grid[0][0];
+        let cell = &snapshot.grid[0].cells[0];
 
         assert_eq!(cell.ch, 'Z');
         assert_eq!(cell.fg, ansi_color(1));
@@ -746,7 +929,7 @@ mod tests {
     fn rendered_rows(grid: &TerminalGrid) -> Vec<String> {
         grid.grid
             .iter()
-            .map(|row| row.iter().map(|cell| cell.ch).collect())
+            .map(|row| row.cells.iter().map(|cell| cell.ch).collect())
             .collect()
     }
 
@@ -758,7 +941,7 @@ mod tests {
         parser.advance(&mut grid, b"LAZYVIM");
         parser.advance(&mut grid, b"\rabc\x1b[K");
 
-        let rendered: String = grid.grid[0].iter().map(|cell| cell.ch).collect();
+        let rendered: String = grid.grid[0].cells.iter().map(|cell| cell.ch).collect();
         assert_eq!(rendered, "abc     ");
     }
 
@@ -769,7 +952,7 @@ mod tests {
 
         parser.advance(&mut grid, b"ABCD\x1b[2DZ");
 
-        let rendered: String = grid.grid[0].iter().map(|cell| cell.ch).collect();
+        let rendered: String = grid.grid[0].cells.iter().map(|cell| cell.ch).collect();
         assert_eq!(rendered, "ABZD");
         assert_eq!(grid.cursor_col, 3);
     }
@@ -781,7 +964,7 @@ mod tests {
 
         parser.advance(&mut grid, b"AB\x08Z");
 
-        let rendered: String = grid.grid[0].iter().map(|cell| cell.ch).collect();
+        let rendered: String = grid.grid[0].cells.iter().map(|cell| cell.ch).collect();
         assert_eq!(rendered, "AZ ");
         assert_eq!(grid.cursor_col, 2);
     }
@@ -830,7 +1013,7 @@ mod tests {
         parser.advance(&mut grid, b"HELLO\r\nWORLD");
         parser.advance(&mut grid, b"\x1b[H\x1b[J\x1b[3J");
 
-        assert!(grid.grid.iter().flatten().all(|cell| cell.ch == ' '));
+        assert!(grid.grid.iter().all(|row| row.cells.iter().all(|cell| cell.ch == ' ')));
         assert_eq!(grid.cursor_row, 0);
         assert_eq!(grid.cursor_col, 0);
     }
@@ -859,5 +1042,46 @@ mod tests {
             "/bin/sh"
         );
         assert_eq!(preferred_terminal_program(None), "/bin/sh");
+    }
+
+    #[test]
+    fn scroll_up_sequence_moves_content_up() {
+        let mut grid = TerminalGrid::new(3, 1);
+        let mut parser = Parser::new();
+        parser.advance(&mut grid, b"1\r\n2\r\n3\x1b[H\x1b[1S");
+        assert_eq!(rendered_rows(&grid), vec!["2", "3", " "]);
+    }
+
+    #[test]
+    fn scroll_down_sequence_moves_content_down() {
+        let mut grid = TerminalGrid::new(3, 1);
+        let mut parser = Parser::new();
+        parser.advance(&mut grid, b"1\r\n2\r\n3\x1b[H\x1b[1T");
+        assert_eq!(rendered_rows(&grid), vec![" ", "1", "2"]);
+    }
+
+    #[test]
+    fn insert_line_sequence_pushes_lines_down() {
+        let mut grid = TerminalGrid::new(3, 1);
+        let mut parser = Parser::new();
+        parser.advance(&mut grid, b"1\r\n2\r\n3\x1b[2;1H\x1b[1L");
+        assert_eq!(rendered_rows(&grid), vec!["1", " ", "2"]);
+    }
+
+    #[test]
+    fn delete_line_sequence_pulls_lines_up() {
+        let mut grid = TerminalGrid::new(3, 1);
+        let mut parser = Parser::new();
+        parser.advance(&mut grid, b"1\r\n2\r\n3\x1b[1;1H\x1b[1M");
+        assert_eq!(rendered_rows(&grid), vec!["2", "3", " "]);
+    }
+
+    #[test]
+    fn reverse_index_scrolls_down_at_top_of_region() {
+        let mut grid = TerminalGrid::new(3, 1);
+        let mut parser = Parser::new();
+        parser.advance(&mut grid, b"1\r\n2\r\n3\x1b[1;1H\x1bM");
+        assert_eq!(rendered_rows(&grid), vec![" ", "1", "2"]);
+        assert_eq!(grid.cursor_row, 0);
     }
 }

@@ -26,7 +26,10 @@ export function getApiUrl(location = typeof window !== 'undefined' ? window.loca
 function cloneTerminalSnapshot(snapshot) {
   return {
     ...snapshot,
-    grid: snapshot.grid.map((row) => row.map((cell) => ({ ...cell }))),
+    grid: snapshot.grid.map((row) => ({
+      ...row,
+      cells: row.cells.map((cell) => ({ ...cell })),
+    })),
   };
 }
 

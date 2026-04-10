@@ -326,7 +326,7 @@ function sizeCanvas(canvas, width, height, ratio) {
 }
 
 function snapshotHasVisibleContent(snapshot) {
-  return snapshot.grid.some((row) => row.some((cell) => cell.ch !== ' '));
+  return snapshot.grid.some((row) => row.cells.some((cell) => cell.ch !== ' '));
 }
 
 function drawStatusCanvas(ctx, width, height, message) {
@@ -340,9 +340,17 @@ function drawStatusCanvas(ctx, width, height, message) {
   ctx.fillText(message, width / 2, height / 2);
 }
 
-function drawTerminalSnapshot(ctx, snapshot) {
+function drawTerminalSnapshot(ctx, snapshot, lastRevisions) {
   snapshot.grid.forEach((row, rowIndex) => {
-    row.forEach((cell, colIndex) => {
+    if (lastRevisions && lastRevisions[rowIndex] === row.revision) {
+      if (rowIndex === snapshot.cursor_row || rowIndex === lastRevisions.last_cursor_row) {
+        // We might need to redraw to add/remove cursor, but let's be simple for now.
+      } else {
+        return;
+      }
+    }
+
+    row.cells.forEach((cell, colIndex) => {
       const x = colIndex * CELL_WIDTH;
       const y = rowIndex * CELL_HEIGHT;
       const colors = getCellColors(cell);
@@ -408,13 +416,15 @@ const TerminalCanvas = forwardRef(function TerminalCanvas(
     }
   }, [forwardedRef]);
 
+  const lastRevisionsRef = useRef({});
+
   useLayoutEffect(() => {
     if (!localCanvasRef.current) {
       return;
     }
 
     const canvas = localCanvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) {
       return;
     }
@@ -423,23 +433,35 @@ const TerminalCanvas = forwardRef(function TerminalCanvas(
     const height = (snapshot?.rows ?? DEFAULT_ROWS) * CELL_HEIGHT;
     const ratio = 1;
 
-    sizeCanvas(canvas, width, height, ratio);
+    if (canvas.width !== width * ratio || canvas.height !== height * ratio) {
+      sizeCanvas(canvas, width, height, ratio);
+      lastRevisionsRef.current = {}; // Reset revisions on resize
+    }
+
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     if (!snapshot) {
       drawStatusCanvas(ctx, width, height, 'Waiting for terminal stream…');
+      lastRevisionsRef.current = {};
       return;
     }
 
     if (!snapshotHasVisibleContent(snapshot)) {
       drawStatusCanvas(ctx, width, height, 'Terminal connected. Waiting for output…');
+      lastRevisionsRef.current = {};
       return;
     }
 
-    ctx.clearRect(0, 0, width, height);
-    drawTerminalSnapshot(ctx, snapshot);
+    drawTerminalSnapshot(ctx, snapshot, lastRevisionsRef.current);
+
+    const nextRevisions = {};
+    snapshot.grid.forEach((row, i) => {
+      nextRevisions[i] = row.revision;
+    });
+    nextRevisions.last_cursor_row = snapshot.cursor_row;
+    lastRevisionsRef.current = nextRevisions;
   });
 
   if (!snapshot && showPlaceholder) {
