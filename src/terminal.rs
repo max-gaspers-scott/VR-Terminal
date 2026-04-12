@@ -767,7 +767,6 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiv
     // Thread 2: your real stdin → PTY input
     let writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
     if raw_mode_enabled {
-        let child_for_thread = Arc::clone(&child);
         let writer_for_stdin = Arc::clone(&writer);
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
@@ -777,11 +776,6 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiv
                 match inp.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        // Ctrl+C in raw mode arrives as byte 0x03 — kill the child and stop
-                        if buf[..n].contains(&0x03) {
-                            child_for_thread.lock().unwrap().kill().ok();
-                            break;
-                        }
                         if writer_for_stdin
                             .lock()
                             .unwrap()
@@ -796,14 +790,9 @@ pub fn main_terminal(tx: watch::Sender<TerminalSnapshot>, input_rx: mpsc::Receiv
         });
     }
 
-    let child_for_socket = Arc::clone(&child);
     let writer_for_socket = Arc::clone(&writer);
     std::thread::spawn(move || {
         while let Ok(bytes) = input_rx.recv() {
-            if bytes.contains(&0x03) {
-                child_for_socket.lock().unwrap().kill().ok();
-            }
-
             if writer_for_socket.lock().unwrap().write_all(&bytes).is_err() {
                 break;
             }
