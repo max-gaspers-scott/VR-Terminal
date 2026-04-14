@@ -130,8 +130,19 @@ function App() {
       return undefined;
     }
 
-    const handleEnterVrState = () => setIsVrActive(true);
-    const handleExitVrState = () => setIsVrActive(false);
+    const handleEnterVrState = () => {
+      setIsVrActive(true);
+      // Force focus back to the terminal shell when entering VR
+      // This ensures keyboard input is captured even in VR mode
+      setTimeout(() => {
+        terminalShellRef.current?.focus();
+        setTerminalFocused(true);
+      }, 100);
+    };
+    const handleExitVrState = () => {
+      setIsVrActive(false);
+      setTerminalFocused(false);
+    };
 
     scene.addEventListener('enter-vr', handleEnterVrState);
     scene.addEventListener('exit-vr', handleExitVrState);
@@ -141,6 +152,26 @@ function App() {
       scene.removeEventListener('exit-vr', handleExitVrState);
     };
   }, []);
+
+  // Periodically refocus the terminal shell while in VR mode
+  // VR headsets can steal focus, so we reinforce it every 2 seconds
+  useEffect(() => {
+    if (!isVrActive) {
+      return undefined;
+    }
+
+    const focusInterval = setInterval(() => {
+      // Only refocus if the shell doesn't already have focus
+      if (document.activeElement !== terminalShellRef.current) {
+        terminalShellRef.current?.focus();
+        setTerminalFocused(true);
+      }
+    }, 2000);
+
+    return () => {
+      clearInterval(focusInterval);
+    };
+  }, [isVrActive]);
 
   const handleEnterVr = useCallback(() => {
     const scene = sceneRef.current;
