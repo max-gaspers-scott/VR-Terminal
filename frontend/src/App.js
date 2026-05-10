@@ -166,6 +166,7 @@ function App() {
 
     const snapshot = cloneTerminalSnapshot(terminalSnapshot);
     let { cursor_row: r, cursor_col: c } = snapshot;
+    const commandBufferHash = commandBuffer.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
 
     for (let i = 0; i < commandBuffer.length; i += 1) {
       if (c >= snapshot.cols) {
@@ -187,7 +188,9 @@ function App() {
           underline: false,
           reverse: false,
         };
-        row.revision += 1;
+        // Ensure the row revision is unique to the current command buffer state
+        // to force TerminalCanvas to redraw the row even if the underlying snapshot hasn't changed.
+        row.revision += 10000 + commandBufferHash + i;
       }
 
       c += 1;
