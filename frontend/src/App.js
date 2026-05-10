@@ -1,5 +1,5 @@
 import './App.css';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TerminalCanvas from './TerminalCanvas';
 import { encodeKeyEvent } from './terminalInput';
 
@@ -37,6 +37,9 @@ function App() {
   const [terminalSnapshot, setTerminalSnapshot] = useState(null);
   const [terminalFocused, setTerminalFocused] = useState(false);
   const [isVrActive, setIsVrActive] = useState(false);
+  const [screenPosition, setScreenPosition] = useState({ x: 0, y: 5, z: -5.5 });
+  const [commandBuffer, setCommandBuffer] = useState('');
+
   const sceneRef = useRef(null);
   const socketRef = useRef(null);
   const terminalShellRef = useRef(null);
@@ -75,10 +78,74 @@ function App() {
     }
   }, []);
 
+  const SPECIAL_COMMANDS = useMemo(() => ({
+    '/up': () => setScreenPosition((pos) => ({ ...pos, y: pos.y + 2 })),
+    '/down': () => setScreenPosition((pos) => ({ ...pos, y: pos.y - 2 })),
+    '/left': () => setScreenPosition((pos) => ({ ...pos, x: pos.x - 3.025 })),
+    '/right': () => setScreenPosition((pos) => ({ ...pos, x: pos.x + 3.025 })),
+  }), []);
+
+  const isPrefixOfCommand = useCallback((str) => {
+    return Object.keys(SPECIAL_COMMANDS).some((cmd) => cmd.startsWith(str));
+  }, [SPECIAL_COMMANDS]);
+
   const handleTerminalKeyDown = useCallback((event) => {
     const encoded = encodeKeyEvent(event);
     if (!encoded) {
       return false;
+    }
+
+    const isPrintable = event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey;
+
+    if (commandBuffer || event.key === '/') {
+      if (isPrintable) {
+        const newBuffer = commandBuffer + event.key;
+        if (isPrefixOfCommand(newBuffer)) {
+          setCommandBuffer(newBuffer);
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+
+        emitTerminalInput(commandBuffer + event.key);
+        setCommandBuffer('');
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+      }
+
+      if (event.key === 'Enter') {
+        if (SPECIAL_COMMANDS[commandBuffer]) {
+          SPECIAL_COMMANDS[commandBuffer]();
+        } else {
+          emitTerminalInput(commandBuffer + '\r');
+        }
+        setCommandBuffer('');
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+      }
+
+      if (event.key === 'Backspace') {
+        if (commandBuffer.length > 0) {
+          setCommandBuffer(commandBuffer.slice(0, -1));
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+      } else if (event.key === 'Escape') {
+        emitTerminalInput(commandBuffer + '\x1b');
+        setCommandBuffer('');
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+      } else {
+        emitTerminalInput(commandBuffer + encoded);
+        setCommandBuffer('');
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+      }
     }
 
     event.preventDefault();
@@ -86,7 +153,54 @@ function App() {
     emitTerminalInput(encoded);
 
     return true;
-  }, [emitTerminalInput]);
+  }, [commandBuffer, emitTerminalInput, SPECIAL_COMMANDS, isPrefixOfCommand]);
+
+  const displaySnapshot = useMemo(() => {
+    if (!terminalSnapshot) {
+      return null;
+    }
+
+    if (!commandBuffer) {
+      return terminalSnapshot;
+    }
+
+    const snapshot = cloneTerminalSnapshot(terminalSnapshot);
+    let { cursor_row: r, cursor_col: c } = snapshot;
+    const commandBufferHash = commandBuffer.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+
+    for (let i = 0; i < commandBuffer.length; i += 1) {
+      if (c >= snapshot.cols) {
+        c = 0;
+        r += 1;
+      }
+
+      if (r >= snapshot.rows) {
+        break;
+      }
+
+      const row = snapshot.grid[r];
+      if (row) {
+        row.cells[c] = {
+          ch: commandBuffer[i],
+          fg: [255, 255, 255],
+          bg: [50, 50, 150],
+          bold: true,
+          underline: false,
+          reverse: false,
+        };
+        // Ensure the row revision is unique to the current command buffer state
+        // to force TerminalCanvas to redraw the row even if the underlying snapshot hasn't changed.
+        row.revision += 10000 + commandBufferHash + i;
+      }
+
+      c += 1;
+    }
+
+    snapshot.cursor_row = r;
+    snapshot.cursor_col = c;
+
+    return snapshot;
+  }, [terminalSnapshot, commandBuffer]);
 
   useEffect(() => {
     if (!terminalFocused) {
@@ -264,7 +378,7 @@ function App() {
         <div className="terminal-texture-source" aria-hidden="true">
           <TerminalCanvas
             ref={terminalCanvasRef}
-            snapshot={terminalSnapshot}
+            snapshot={displaySnapshot}
             showPlaceholder={false}
             canvasId="terminal-canvas-texture"
             className="terminal-texture-canvas"
@@ -288,7 +402,7 @@ function App() {
           <a-plane
             ref={terminalPlaneRef}
             data-testid="terminal-plane"
-            position="0 5 -5.5"
+            position={`${screenPosition.x} ${screenPosition.y} ${screenPosition.z}`}
             width="12.1"
             height="8"
             color="#000000"
