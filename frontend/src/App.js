@@ -39,6 +39,7 @@ function App() {
   const [isVrActive, setIsVrActive] = useState(false);
   const [screenPosition, setScreenPosition] = useState({ x: 0, y: 5, z: -5.5 });
   const [commandBuffer, setCommandBuffer] = useState('');
+  const commandBufferRef = useRef('');
 
   const sceneRef = useRef(null);
   const socketRef = useRef(null);
@@ -96,18 +97,21 @@ function App() {
     }
 
     const isPrintable = event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey;
+    const currentBuffer = commandBufferRef.current;
 
-    if (commandBuffer || event.key === '/') {
+    if (currentBuffer || event.key === '/') {
       if (isPrintable) {
-        const newBuffer = commandBuffer + event.key;
+        const newBuffer = currentBuffer + event.key;
         if (isPrefixOfCommand(newBuffer)) {
+          commandBufferRef.current = newBuffer;
           setCommandBuffer(newBuffer);
           event.preventDefault();
           event.stopPropagation();
           return true;
         }
 
-        emitTerminalInput(commandBuffer + event.key);
+        emitTerminalInput(currentBuffer + event.key);
+        commandBufferRef.current = '';
         setCommandBuffer('');
         event.preventDefault();
         event.stopPropagation();
@@ -115,11 +119,12 @@ function App() {
       }
 
       if (event.key === 'Enter') {
-        if (SPECIAL_COMMANDS[commandBuffer]) {
-          SPECIAL_COMMANDS[commandBuffer]();
+        if (SPECIAL_COMMANDS[currentBuffer]) {
+          SPECIAL_COMMANDS[currentBuffer]();
         } else {
-          emitTerminalInput(commandBuffer + '\r');
+          emitTerminalInput(currentBuffer + '\r');
         }
+        commandBufferRef.current = '';
         setCommandBuffer('');
         event.preventDefault();
         event.stopPropagation();
@@ -127,20 +132,24 @@ function App() {
       }
 
       if (event.key === 'Backspace') {
-        if (commandBuffer.length > 0) {
-          setCommandBuffer(commandBuffer.slice(0, -1));
+        if (currentBuffer.length > 0) {
+          const newBuffer = currentBuffer.slice(0, -1);
+          commandBufferRef.current = newBuffer;
+          setCommandBuffer(newBuffer);
           event.preventDefault();
           event.stopPropagation();
           return true;
         }
       } else if (event.key === 'Escape') {
-        emitTerminalInput(commandBuffer + '\x1b');
+        emitTerminalInput(currentBuffer + '\x1b');
+        commandBufferRef.current = '';
         setCommandBuffer('');
         event.preventDefault();
         event.stopPropagation();
         return true;
       } else {
-        emitTerminalInput(commandBuffer + encoded);
+        emitTerminalInput(currentBuffer + encoded);
+        commandBufferRef.current = '';
         setCommandBuffer('');
         event.preventDefault();
         event.stopPropagation();
@@ -153,7 +162,7 @@ function App() {
     emitTerminalInput(encoded);
 
     return true;
-  }, [commandBuffer, emitTerminalInput, SPECIAL_COMMANDS, isPrefixOfCommand]);
+  }, [emitTerminalInput, SPECIAL_COMMANDS, isPrefixOfCommand]);
 
   const displaySnapshot = useMemo(() => {
     if (!terminalSnapshot) {
