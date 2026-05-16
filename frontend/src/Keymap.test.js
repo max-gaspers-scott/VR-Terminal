@@ -153,4 +153,57 @@ describe('Keymap functionality', () => {
     // Should send 'J'
     expect(socket.emit).toHaveBeenCalledWith('terminal-input', 'J');
   });
+
+  test('home-row modifiers do not interfere with command buffer', () => {
+    render(<App />);
+    const shell = screen.getByTestId('vr-shell');
+    fireEvent.focus(shell);
+    activateKeymap(shell);
+    socket.emit.mockClear();
+
+    // Type /up - 'k' is a home-row mod (Shift), 'a' is a home-row mod (Meta)
+    // But they should be treated as normal letters when starting with '/'
+    fireEvent.keyDown(document, { key: '/' });
+    fireEvent.keyDown(document, { key: 'k', code: 'KeyK' });
+    fireEvent.keyDown(document, { key: 'e', code: 'KeyE' });
+    fireEvent.keyDown(document, { key: 'y', code: 'KeyY' });
+
+    // Should not have emitted anything to socket yet, it's in the buffer
+    expect(socket.emit).not.toHaveBeenCalled();
+
+    // Finish command and enter
+    fireEvent.keyDown(document, { key: 'm', code: 'KeyM' });
+    fireEvent.keyDown(document, { key: 'a', code: 'KeyA' });
+    fireEvent.keyDown(document, { key: 'p', code: 'KeyP' });
+    fireEvent.keyDown(document, { key: 'Enter', code: 'Enter' });
+
+    // Keymap should now be toggled OFF (since it was ON)
+    socket.emit.mockClear();
+    fireEvent.keyDown(document, { key: 'f', code: 'KeyF' });
+    fireEvent.keyDown(document, { key: 'c', code: 'KeyC' });
+    // Since keymap is OFF, 'f' should be sent immediately on keyDown
+    expect(socket.emit).toHaveBeenCalledWith('terminal-input', 'f');
+  });
+
+  test('modifiers are cleared when terminal loses focus', () => {
+    render(<App />);
+    const shell = screen.getByTestId('vr-shell');
+    fireEvent.focus(shell);
+    activateKeymap(shell);
+    socket.emit.mockClear();
+
+    // Press down KeyF (Ctrl)
+    fireEvent.keyDown(document, { code: 'KeyF' });
+
+    // Blur terminal
+    fireEvent.blur(shell);
+
+    // Focus terminal again
+    fireEvent.focus(shell);
+
+    // Press 'c' - should NOT be Ctrl+C because KeyF should have been cleared on blur
+    fireEvent.keyDown(document, { key: 'c', code: 'KeyC' });
+    expect(socket.emit).toHaveBeenCalledWith('terminal-input', 'c');
+    expect(socket.emit).not.toHaveBeenCalledWith('terminal-input', '\x03');
+  });
 });

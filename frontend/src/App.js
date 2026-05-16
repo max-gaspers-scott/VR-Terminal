@@ -243,10 +243,10 @@ function App() {
   }, [terminalSnapshot, commandBuffer]);
 
   useEffect(() => {
-    if (!keymapEnabled) {
+    if (!keymapEnabled || !terminalFocused) {
       pressedHomeRowKeysRef.current.clear();
     }
-  }, [keymapEnabled]);
+  }, [keymapEnabled, terminalFocused]);
 
   useEffect(() => {
     if (!terminalFocused) {
@@ -254,6 +254,17 @@ function App() {
     }
 
     const handleDocumentKeyDown = (event) => {
+      // Ensure command buffer interception takes precedence over keymap modifiers
+      const isPrintable = event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey;
+      if (isPrintable && (commandBufferRef.current || event.key === '/')) {
+        handleTerminalKeyDown(event);
+        return;
+      }
+      if (commandBufferRef.current && (event.key === 'Enter' || event.key === 'Backspace' || event.key === 'Escape')) {
+        handleTerminalKeyDown(event);
+        return;
+      }
+
       if (keymapEnabled) {
         const mod = HOME_ROW_MODS[event.code];
         if (mod) {
