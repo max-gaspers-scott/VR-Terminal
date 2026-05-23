@@ -80,7 +80,7 @@ test('uses the fallback Enter VR button to call scene.enterVR', () => {
 });
 
 test('uses the current page origin for the backend when no API env override is set', () => {
-  expect(getApiUrl({ origin: 'http://192.168.1.42:8081' })).toBe('http://192.168.1.42:8081');
+  expect(getApiUrl({ origin: 'http://192.168.1.42:4046' })).toBe('http://192.168.1.42:4046');
 });
 
 test('maps the CRA development server port to the backend port', () => {
@@ -89,7 +89,7 @@ test('maps the CRA development server port to the backend port', () => {
     protocol: 'http:',
     hostname: 'localhost',
     port: '3000',
-  })).toBe('http://localhost:8081');
+  })).toBe('http://localhost:4046');
 });
 
 test('prefers an explicit API override when provided', () => {

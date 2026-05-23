@@ -59,16 +59,16 @@ services:
       createbuckets:
         condition: service_completed_successfully
     ports:
-      - "${APP_PUBLIC_PORT:-3094}:8081"
+      - "${APP_PUBLIC_PORT:-3094}:4046"
     environment:
-      PORT: "8081"
+      PORT: "4046"
       FRONTEND_BUILD_DIR: /app/frontend/build
       DATABASE_URL: postgres://${POSTGRES_USER:-dbuser}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-data}
       DATABASE_CONNECT_TIMEOUT: "30"
       SQLX_OFFLINE: "true"
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4046/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

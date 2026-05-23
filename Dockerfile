@@ -62,8 +62,8 @@ RUN chown -R appuser:appuser /app && chmod +x /app/vr-terminal
 
 USER appuser
 
-# The application listens on port 8081 – expose it to the host
-EXPOSE 8081
+# The application listens on port 4046 – expose it to the host
+EXPOSE 4046
 
 # Start the server
 CMD ["/app/vr-terminal"]

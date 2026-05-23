@@ -14,13 +14,13 @@ export function getApiUrl(location = typeof window !== 'undefined' ? window.loca
 
   if (location?.origin && location.origin !== 'null') {
     if (location.protocol && location.hostname && location.port === '3000') {
-      return `${location.protocol}//${location.hostname}:8081`;
+      return `${location.protocol}//${location.hostname}:4046`;
     }
 
     return location.origin;
   }
 
-  return 'http://localhost:8081';
+  return 'http://localhost:4046';
 }
 
 const HOME_ROW_MODS = {
@@ -70,6 +70,7 @@ function App() {
   const commandBufferRef = useRef('');
   const [keymapEnabled, setKeymapEnabled] = useState(false);
   const pressedHomeRowKeysRef = useRef(new Map());
+  const [keymapNotification, setKeymapNotification] = useState('');
 
   const sceneRef = useRef(null);
   const socketRef = useRef(null);
@@ -114,7 +115,15 @@ function App() {
     '/down': () => setScreenPosition((pos) => ({ ...pos, y: pos.y - 2 })),
     '/left': () => setScreenPosition((pos) => ({ ...pos, x: pos.x - 3.025 })),
     '/right': () => setScreenPosition((pos) => ({ ...pos, x: pos.x + 3.025 })),
-    '/keymap': () => setKeymapEnabled((prev) => !prev),
+    '/keymap': () => {
+      setKeymapEnabled((prev) => {
+        const newValue = !prev;
+        setKeymapNotification(newValue ? 'Home-row keymap: ON' : 'Home-row keymap: OFF');
+        console.log(`Keymap toggled: ${newValue ? 'ON' : 'OFF'}`);
+        setTimeout(() => setKeymapNotification(''), 2000);
+        return newValue;
+      });
+    },
   }), []);
 
   const isPrefixOfCommand = useCallback((str) => {
@@ -151,8 +160,10 @@ function App() {
 
       if (event.key === 'Enter') {
         if (SPECIAL_COMMANDS[currentBuffer]) {
+          console.log(`Executing special command: ${currentBuffer}`);
           SPECIAL_COMMANDS[currentBuffer]();
         } else {
+          console.log(`Sending to terminal: ${currentBuffer}`);
           emitTerminalInput(currentBuffer + '\r');
         }
         commandBufferRef.current = '';
@@ -574,6 +585,18 @@ function App() {
           >
             Enter VR
           </button>
+        )}
+
+        {keymapNotification && (
+          <div className="keymap-notification">
+            {keymapNotification}
+          </div>
+        )}
+
+        {keymapEnabled && (
+          <div className="keymap-indicator">
+            HOME-ROW KEYMAP
+          </div>
         )}
       </div>
     </div>
