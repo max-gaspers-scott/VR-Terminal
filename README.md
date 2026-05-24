@@ -1,5 +1,8 @@
 # VR-Terminal
 
+[![Watch the video](https://youtube.com)](](https://youtu.be/_yg3U4qR8BY))
+
+
 A high-performance PTY terminal emulator for WebVR. Interact with your computer's CLI applications and files from within a virtual reality environment (Meta Quest, phone VR, etc.).
 
 ## Why VR-Terminal?
