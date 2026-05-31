@@ -67,6 +67,7 @@ function App() {
   const [isVrActive, setIsVrActive] = useState(false);
   const [screenPosition, setScreenPosition] = useState({ x: 0, y: 5, z: -5.5 });
   const [commandBuffer, setCommandBuffer] = useState('');
+  const [isKeymapActive, setIsKeymapActive] = useState(false);
   const commandBufferRef = useRef('');
   const [keymapEnabled, setKeymapEnabled] = useState(false);
   const pressedHomeRowKeysRef = useRef(new Map());
@@ -131,6 +132,13 @@ function App() {
   }, [SPECIAL_COMMANDS]);
 
   const handleTerminalKeyDown = useCallback((event) => {
+    if (isKeymapActive && event.code === 'CapsLock') {
+      event.preventDefault();
+      event.stopPropagation();
+      emitTerminalInput('\x1b');
+      return true;
+    }
+
     const encoded = encodeKeyEvent(event);
     if (!encoded) {
       return false;
@@ -204,7 +212,7 @@ function App() {
     emitTerminalInput(encoded);
 
     return true;
-  }, [emitTerminalInput, SPECIAL_COMMANDS, isPrefixOfCommand]);
+  }, [emitTerminalInput, SPECIAL_COMMANDS, isPrefixOfCommand, isKeymapActive]);
 
   const displaySnapshot = useMemo(() => {
     if (!terminalSnapshot) {
