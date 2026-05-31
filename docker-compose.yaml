@@ -55,7 +55,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8081:8081"
+      - "7639:4046"
     environment:
       DATABASE_URL: "postgres://dbuser:p@db:5432/data"
       DATABASE_CONNECT_TIMEOUT: "30"
@@ -65,24 +65,11 @@ services:
         condition: service_healthy
     restart: on-failure
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8081/health"]
+      test: ["CMD", "wget", "--spider", "http://localhost:4046/health"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
-
-  python:
-    build:
-      context: ./fastapi-template
-    depends_on:
-      - app
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8003/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
 volumes:
   postgres_data:
   minio_data:

@@ -1,5 +1,8 @@
 # VR-Terminal
 
+[![Watch the video](https://youtube.com)](](https://youtu.be/_yg3U4qR8BY))
+
+
 A high-performance PTY terminal emulator for WebVR. Interact with your computer's CLI applications and files from within a virtual reality environment (Meta Quest, phone VR, etc.).
 
 ## Why VR-Terminal?
@@ -60,10 +63,10 @@ Traditional VNC or screen-casting solutions for VR often suffer from high bandwi
    ```bash
    cargo run --release
    ```
-   The server will start at `http://localhost:8081`.
+   The server will start at `http://localhost:4046`.
 
 4. **Access the Terminal:**
-   Open `http://localhost:8081` in your browser. Click "Enter VR" to switch to the virtual environment.
+   Open `http://localhost:4046` in your browser. Click "Enter VR" to switch to the virtual environment.
 
 ### Docker Setup
 
@@ -90,7 +93,7 @@ For WebVR to work properly on some headsets (like Meta Quest), you may need to s
 
 ## Environment Variables
 
-- `PORT`: The port the server listens on (default: `8081`).
+- `PORT`: The port the server listens on (default: `4046`).
 - `TLS_ENABLED`: Set to `true` to enable HTTPS (requires `TLS_CERT_PATH` and `TLS_KEY_PATH`).
 - `FRONTEND_BUILD_DIR`: Path to the frontend build artifacts (default: `frontend/build`).
 - `CORS_ALLOWED_ORIGINS`: Comma-separated list of allowed origins.

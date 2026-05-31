@@ -14,14 +14,42 @@ export function getApiUrl(location = typeof window !== 'undefined' ? window.loca
 
   if (location?.origin && location.origin !== 'null') {
     if (location.protocol && location.hostname && location.port === '3000') {
-      return `${location.protocol}//${location.hostname}:8081`;
+      return `${location.protocol}//${location.hostname}:4046`;
     }
 
     return location.origin;
   }
 
-  return 'http://localhost:8081';
+  return 'http://localhost:4046';
 }
+
+const HOME_ROW_MODS = {
+  KeyA: 'metaKey',
+  Semicolon: 'metaKey',
+  KeyS: 'altKey',
+  KeyL: 'altKey',
+  KeyD: 'shiftKey',
+  KeyK: 'shiftKey',
+  KeyF: 'ctrlKey',
+  KeyJ: 'ctrlKey',
+};
+
+const HOME_ROW_KEYS = {
+  KeyA: 'a',
+  Semicolon: ';',
+  KeyS: 's',
+  KeyL: 'l',
+  KeyD: 'd',
+  KeyK: 'k',
+  KeyF: 'f',
+  KeyJ: 'j',
+};
+
+const SHIFT_MAP = {
+  'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D', 'e': 'E', 'f': 'F', 'g': 'G', 'h': 'H', 'i': 'I', 'j': 'J', 'k': 'K', 'l': 'L', 'm': 'M', 'n': 'N', 'o': 'O', 'p': 'P', 'q': 'Q', 'r': 'R', 's': 'S', 't': 'T', 'u': 'U', 'v': 'V', 'w': 'W', 'x': 'X', 'y': 'Y', 'z': 'Z',
+  '1': '!', '2': '@', '3': '#', '4': '$', '5': '%', '6': '^', '7': '&', '8': '*', '9': '(', '0': ')',
+  '-': '_', '=': '+', '[': '{', ']': '}', '\\': '|', ';': ':', "'": '"', ',': '<', '.': '>', '/': '?', '`': '~'
+};
 
 function cloneTerminalSnapshot(snapshot) {
   return {
@@ -41,6 +69,9 @@ function App() {
   const [commandBuffer, setCommandBuffer] = useState('');
   const [isKeymapActive, setIsKeymapActive] = useState(false);
   const commandBufferRef = useRef('');
+  const [keymapEnabled, setKeymapEnabled] = useState(false);
+  const pressedHomeRowKeysRef = useRef(new Map());
+  const [keymapNotification, setKeymapNotification] = useState('');
 
   const sceneRef = useRef(null);
   const socketRef = useRef(null);
@@ -85,7 +116,15 @@ function App() {
     '/down': () => setScreenPosition((pos) => ({ ...pos, y: pos.y - 2 })),
     '/left': () => setScreenPosition((pos) => ({ ...pos, x: pos.x - 3.025 })),
     '/right': () => setScreenPosition((pos) => ({ ...pos, x: pos.x + 3.025 })),
-    '/keymap': () => setIsKeymapActive((active) => !active),
+    '/keymap': () => {
+      setKeymapEnabled((prev) => {
+        const newValue = !prev;
+        setKeymapNotification(newValue ? 'Home-row keymap: ON' : 'Home-row keymap: OFF');
+        console.log(`Keymap toggled: ${newValue ? 'ON' : 'OFF'}`);
+        setTimeout(() => setKeymapNotification(''), 2000);
+        return newValue;
+      });
+    },
   }), []);
 
   const isPrefixOfCommand = useCallback((str) => {
@@ -129,8 +168,10 @@ function App() {
 
       if (event.key === 'Enter') {
         if (SPECIAL_COMMANDS[currentBuffer]) {
+          console.log(`Executing special command: ${currentBuffer}`);
           SPECIAL_COMMANDS[currentBuffer]();
         } else {
+          console.log(`Sending to terminal: ${currentBuffer}`);
           emitTerminalInput(currentBuffer + '\r');
         }
         commandBufferRef.current = '';
@@ -221,20 +262,136 @@ function App() {
   }, [terminalSnapshot, commandBuffer]);
 
   useEffect(() => {
+    if (!keymapEnabled || !terminalFocused) {
+      pressedHomeRowKeysRef.current.clear();
+    }
+  }, [keymapEnabled, terminalFocused]);
+
+  useEffect(() => {
     if (!terminalFocused) {
       return undefined;
     }
 
     const handleDocumentKeyDown = (event) => {
-      handleTerminalKeyDown(event);
+      // Ensure command buffer interception takes precedence over keymap modifiers
+      const isPrintable = event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey;
+      if (isPrintable && (commandBufferRef.current || event.key === '/')) {
+        handleTerminalKeyDown(event);
+        return;
+      }
+      if (commandBufferRef.current && (event.key === 'Enter' || event.key === 'Backspace' || event.key === 'Escape')) {
+        handleTerminalKeyDown(event);
+        return;
+      }
+
+      if (keymapEnabled) {
+        const mod = HOME_ROW_MODS[event.code];
+        if (mod) {
+          if (!pressedHomeRowKeysRef.current.has(event.code)) {
+            pressedHomeRowKeysRef.current.set(event.code, { usedAsModifier: false });
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
+        if (pressedHomeRowKeysRef.current.size > 0) {
+          const modifiers = {
+            ctrlKey: event.ctrlKey,
+            altKey: event.altKey,
+            shiftKey: event.shiftKey,
+            metaKey: event.metaKey,
+          };
+          pressedHomeRowKeysRef.current.forEach((val, code) => {
+            modifiers[HOME_ROW_MODS[code]] = true;
+            val.usedAsModifier = true;
+          });
+
+          let key = event.key;
+          if (modifiers.shiftKey && SHIFT_MAP[key]) {
+            key = SHIFT_MAP[key];
+          }
+
+          const fakeEvent = {
+            key,
+            code: event.code,
+            ...modifiers,
+            preventDefault: () => {
+              if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+              }
+            },
+            stopPropagation: () => {
+              if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation();
+              }
+            },
+          };
+          handleTerminalKeyDown(fakeEvent);
+          return;
+        }
+      }
+
+      if (event.preventDefault) {
+        handleTerminalKeyDown(event);
+      } else {
+        const fakeEvent = {
+          ...event,
+          preventDefault: () => {},
+          stopPropagation: () => {},
+        };
+        handleTerminalKeyDown(fakeEvent);
+      }
+    };
+
+    const handleDocumentKeyUp = (event) => {
+      if (keymapEnabled) {
+        const state = pressedHomeRowKeysRef.current.get(event.code);
+        if (state) {
+          if (!state.usedAsModifier) {
+            let key = HOME_ROW_KEYS[event.code];
+            const modifiers = {
+              ctrlKey: false,
+              altKey: false,
+              shiftKey: false,
+              metaKey: false,
+            };
+            pressedHomeRowKeysRef.current.forEach((val, code) => {
+              if (code !== event.code) {
+                modifiers[HOME_ROW_MODS[code]] = true;
+                val.usedAsModifier = true;
+              }
+            });
+
+            if (modifiers.shiftKey && SHIFT_MAP[key]) {
+              key = SHIFT_MAP[key];
+            }
+
+            const fakeEvent = {
+              key,
+              code: event.code,
+              ...modifiers,
+              preventDefault: () => {},
+              stopPropagation: () => {},
+            };
+            handleTerminalKeyDown(fakeEvent);
+          }
+          pressedHomeRowKeysRef.current.delete(event.code);
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }
     };
 
     document.addEventListener('keydown', handleDocumentKeyDown, true);
+    document.addEventListener('keyup', handleDocumentKeyUp, true);
 
     return () => {
       document.removeEventListener('keydown', handleDocumentKeyDown, true);
+      document.removeEventListener('keyup', handleDocumentKeyUp, true);
     };
-  }, [handleTerminalKeyDown, terminalFocused]);
+  }, [handleTerminalKeyDown, terminalFocused, keymapEnabled]);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -436,6 +593,18 @@ function App() {
           >
             Enter VR
           </button>
+        )}
+
+        {keymapNotification && (
+          <div className="keymap-notification">
+            {keymapNotification}
+          </div>
+        )}
+
+        {keymapEnabled && (
+          <div className="keymap-indicator">
+            HOME-ROW KEYMAP
+          </div>
         )}
       </div>
     </div>

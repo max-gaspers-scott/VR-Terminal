@@ -74,3 +74,56 @@
   place-items: center;
   color: #8ea3b8;
 }
+
+.keymap-notification {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10002;
+  padding: 20px 32px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.9);
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 600;
+  border: 2px solid #6ed6ff;
+  box-shadow: 0 4px 16px rgba(110, 214, 255, 0.3);
+  pointer-events: none;
+  animation: fadeInOut 2s ease-in-out;
+}
+
+@keyframes fadeInOut {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  85% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+}
+
+.keymap-indicator {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+  left: calc(env(safe-area-inset-left, 0px) + 16px);
+  z-index: 10000;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: rgba(110, 214, 255, 0.15);
+  color: #6ed6ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(110, 214, 255, 0.4);
+  pointer-events: none;
+}

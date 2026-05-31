@@ -139,7 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cors = cors_layer()?;
     let port = match env::var("PORT") {
         Ok(value) => value.parse::<u16>()?,
-        Err(_) => 8081,
+        Err(_) => 4046,
     };
 
     let app = Router::new()
