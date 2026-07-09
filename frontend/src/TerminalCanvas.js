@@ -7,6 +7,17 @@ const FONT_FAMILY = '"DejaVu Sans Mono", "Noto Sans Mono", ui-monospace, SFMono-
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 40;
 
+const BLOCK_GLYPHS = new Set([
+  '█', '▀', '▄', '▌', '▐', '░', '▒', '▓', '▘', '▝', '▖', '▗', '▚', '▞',
+  '─', '━', '│', '┃', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼',
+  '┏', '┓', '┗', '┛', '┣', '┫', '┳', '┻', '╋',
+  '═', '║', '╔', '╗', '╚', '╝', '╠', '╣', '╦', '╩', '╬',
+  '╭', '╮', '╰', '╯'
+]);
+
+const BOLD_FONT = `700 ${FONT_SIZE}px ${FONT_FAMILY}`;
+const NORMAL_FONT = `400 ${FONT_SIZE}px ${FONT_FAMILY}`;
+
 const toRgb = ([r, g, b]) => `rgb(${r}, ${g}, ${b})`;
 
 function brightenColor([r, g, b], amount = 0.2) {
@@ -336,57 +347,83 @@ function drawStatusCanvas(ctx, width, height, message) {
   ctx.fillStyle = '#0f1722';
   ctx.fillRect(width * 0.08, height * 0.16, width * 0.84, height * 0.68);
   ctx.fillStyle = '#8ea3b8';
-  ctx.font = `400 22px ${FONT_FAMILY}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `400 35px ${FONT_FAMILY}`;
   ctx.fillText(message, width / 2, height / 2);
 }
 
 function drawTerminalSnapshot(ctx, snapshot, lastRevisions) {
-  snapshot.grid.forEach((row, rowIndex) => {
+  const { grid, cursor_row, cursor_col, cols } = snapshot;
+
+  grid.forEach((row, rowIndex) => {
     if (lastRevisions && lastRevisions[rowIndex] === row.revision) {
-      if (rowIndex === snapshot.cursor_row || rowIndex === lastRevisions.last_cursor_row) {
-        // We might need to redraw to add/remove cursor, but let's be simple for now.
-      } else {
+      if (rowIndex !== cursor_row && rowIndex !== lastRevisions.last_cursor_row) {
         return;
       }
     }
 
+    const y = rowIndex * CELL_HEIGHT;
+
+    // 1. Draw backgrounds in batches
+    let currentBg = null;
+    let startCol = 0;
+
+    for (let colIndex = 0; colIndex < cols; colIndex++) {
+      const cell = row.cells[colIndex];
+      const { bg } = getCellColors(cell);
+      const bgStr = toRgb(bg);
+
+      if (bgStr !== currentBg) {
+        if (currentBg !== null) {
+          ctx.fillStyle = currentBg;
+          ctx.fillRect(startCol * CELL_WIDTH, y, (colIndex - startCol) * CELL_WIDTH, CELL_HEIGHT);
+        }
+        currentBg = bgStr;
+        startCol = colIndex;
+      }
+    }
+    if (currentBg !== null) {
+      ctx.fillStyle = currentBg;
+      ctx.fillRect(startCol * CELL_WIDTH, y, (cols - startCol) * CELL_WIDTH, CELL_HEIGHT);
+    }
+
+    // 2. Draw characters and decorations
+    let lastFont = null;
+    let lastFg = null;
+
     row.cells.forEach((cell, colIndex) => {
       const x = colIndex * CELL_WIDTH;
-      const y = rowIndex * CELL_HEIGHT;
-      const colors = getCellColors(cell);
+      const { fg } = getCellColors(cell);
+      const fgStr = toRgb(fg);
 
-      ctx.fillStyle = toRgb(colors.bg);
-      ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
-
-      if (!drawBlockGlyph(ctx, cell.ch, cell, x, y, colors) && cell.ch !== ' ') {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x, y, CELL_WIDTH, CELL_HEIGHT);
-        ctx.clip();
-        ctx.fillStyle = toRgb(colors.fg);
-        ctx.font = `${cell.bold ? '700' : '400'} ${FONT_SIZE}px ${FONT_FAMILY}`;
-        ctx.fillText(cell.ch, x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 + 0.5);
-
-        if (cell.underline) {
-          ctx.beginPath();
-          ctx.strokeStyle = toRgb(colors.fg);
-          ctx.lineWidth = cell.bold ? 2 : 1;
-          ctx.moveTo(x + 1, y + CELL_HEIGHT - 3);
-          ctx.lineTo(x + CELL_WIDTH - 1, y + CELL_HEIGHT - 3);
-          ctx.stroke();
+      if (BLOCK_GLYPHS.has(cell.ch)) {
+        drawBlockGlyph(ctx, cell.ch, cell, x, y, { fg, bg: [] });
+        lastFont = null;
+        lastFg = fgStr;
+      } else if (cell.ch !== ' ') {
+        const font = cell.bold ? BOLD_FONT : NORMAL_FONT;
+        if (font !== lastFont) {
+          ctx.font = font;
+          lastFont = font;
         }
+        if (fgStr !== lastFg) {
+          ctx.fillStyle = fgStr;
+          lastFg = fgStr;
+        }
+        ctx.fillText(cell.ch, x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 + 0.5);
+      }
 
-        ctx.restore();
-      } else if (cell.underline) {
+      if (cell.underline) {
         ctx.beginPath();
-        ctx.strokeStyle = toRgb(colors.fg);
+        ctx.strokeStyle = fgStr;
         ctx.lineWidth = cell.bold ? 2 : 1;
         ctx.moveTo(x + 1, y + CELL_HEIGHT - 3);
         ctx.lineTo(x + CELL_WIDTH - 1, y + CELL_HEIGHT - 3);
         ctx.stroke();
       }
 
-      if (rowIndex === snapshot.cursor_row && colIndex === snapshot.cursor_col) {
+      if (rowIndex === cursor_row && colIndex === cursor_col) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
         ctx.lineWidth = 1;
         ctx.strokeRect(x + 0.5, y + 0.5, CELL_WIDTH - 1, CELL_HEIGHT - 1);
